@@ -10,3 +10,4 @@ infra/cdk.out/
 
 .claude/settings.local.json
 .DS_Store
+infra/cdk-outputs.json
