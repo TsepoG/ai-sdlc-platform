@@ -118,8 +118,9 @@ These steps are done once by the owner. Claude Code cannot do them.
    - Set each environment's **deployment branches** to `main` only. The role trusts `repo:<owner>/<repo>:environment:<name>`, so this policy is what keeps environment jobs on `main`.
    - Add required reviewers to `platform-prod`.
 5. **Add variables to both environments:** `AWS_DEPLOY_ROLE_ARN` (from step 3) and `AWS_REGION`.
-6. **Run the deploy.** Merging to `main` deploys `platform-dev` after CI passes. For prod, run the **Deploy platform** workflow manually and choose `platform-prod`. The workflow deploys the registry, builds and pushes the image tagged with the commit SHA, deploys the platform, then checks that `/health` reports that SHA.
-7. **Set the model API key** (when the provider route is decided) by putting the real value in the Secrets Manager secret `ai-sdlc-platform/<env>/model-api-key`. It currently holds the placeholder `REPLACE_ME_SET_MANUALLY` and is not injected into the service.
+6. **Enable deploys:** add the **repository** variable `PLATFORM_DEPLOY_ENABLED` with the value `true` (Settings → Secrets and variables → Actions → Variables). Until it is set, the deploy workflow skips every run.
+7. **Run the deploy.** Merging to `main` deploys `platform-dev` after CI passes. For prod, run the **Deploy platform** workflow manually and choose `platform-prod`. The workflow deploys the registry, builds and pushes the image tagged with the commit SHA, deploys the platform, then checks that `/health` reports that SHA.
+8. **Set the model API key** (when the provider route is decided) by putting the real value in the Secrets Manager secret `ai-sdlc-platform/<env>/model-api-key`. It currently holds the placeholder `REPLACE_ME_SET_MANUALLY` and is not injected into the service.
 
 > **Warning:** the ALB is public and serves plain HTTP. It must be put behind SSO, or made internal, before any real data is used with the platform.
 
