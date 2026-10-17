@@ -17,9 +17,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      # Empty on fork PRs and until the owner adds them; the Sonar step checks before running.
+      # Empty on fork PRs and until the owner adds them; the Sonar steps check before running.
+      # SonarQube Cloud needs no host URL. For self-hosted SonarQube Server, also add a
+      # SONAR_HOST_URL secret here and drop the organization argument below.
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+      SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
     steps:
       # actions/checkout v7.0.1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -49,10 +52,14 @@ jobs:
         run: npx cdk synth --quiet
 
       - name: SonarQube scan skipped
-        if: ${{ env.SONAR_TOKEN == '' || env.SONAR_HOST_URL == '' }}
-        run: echo "::notice title=SonarQube skipped::SONAR_TOKEN and SONAR_HOST_URL secrets are not set; the scan did not run."
+        if: ${{ env.SONAR_TOKEN == '' || env.SONAR_ORGANIZATION == '' || env.SONAR_PROJECT_KEY == '' }}
+        run: echo "::notice title=SonarQube skipped::Set the SONAR_TOKEN secret and the SONAR_ORGANIZATION and SONAR_PROJECT_KEY variables; the scan did not run."
 
       # SonarSource/sonarqube-scan-action v8.3.0
       - name: SonarQube scan
-        if: ${{ env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != '' }}
+        if: ${{ env.SONAR_TOKEN != '' && env.SONAR_ORGANIZATION != '' && env.SONAR_PROJECT_KEY != '' }}
         uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9
+        with:
+          args: >-
+            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
+            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}

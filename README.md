@@ -125,12 +125,11 @@ These steps are done once by the owner. Claude Code cannot do them.
 
 ## CI
 
-`ci.yml` runs on pull requests and on pushes to `main`: install, `npm run verify`, `npm run audit`, `cdk synth`, then the SonarQube scan. Add the repository secrets `SONAR_TOKEN` and `SONAR_HOST_URL` to enable the scan; until then CI prints a notice and skips it. Set the real project key in `sonar-project.properties`.
+`ci.yml` runs on pull requests and on pushes to `main`: install, `npm run verify`, `npm run audit`, `cdk synth`, then the SonarQube scan. Add the repository secret `SONAR_TOKEN` and the repository variables `SONAR_ORGANIZATION` and `SONAR_PROJECT_KEY` to enable the scan (SonarQube Cloud needs no host URL); until all three are set, CI prints a notice and skips it. For self-hosted SonarQube Server, also pass a `SONAR_HOST_URL` secret to the scan step and drop the organization argument.
 
 ## Placeholders to fill in
 
-- `sonar-project.properties`: `sonar.projectKey`.
-- GitHub secrets `SONAR_TOKEN`, `SONAR_HOST_URL`.
+- GitHub secret `SONAR_TOKEN`, and repository variables `SONAR_ORGANIZATION` and `SONAR_PROJECT_KEY`.
 - GitHub environment variables `AWS_DEPLOY_ROLE_ARN`, `AWS_REGION` (per environment).
 - AWS account and region (supplied by your credentials; nothing is hard-coded).
 - Secrets Manager `ai-sdlc-platform/<env>/model-api-key` value.
