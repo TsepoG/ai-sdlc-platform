@@ -6,6 +6,8 @@ const COVERAGE_THRESHOLD = 90;
 export default defineConfig({
   test: {
     include: ['test/**/*.test.js'],
+    // CDK synth and the ESLint Node API are slow on a cold start, especially in parallel.
+    testTimeout: 30_000,
     // Live tests hit real services; `npm run test:live` selects them, every other script excludes them.
     tags: [
       { name: 'live', description: 'Calls real external services; run with npm run test:live.' },
