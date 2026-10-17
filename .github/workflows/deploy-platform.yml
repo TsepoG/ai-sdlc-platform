@@ -1,0 +1,110 @@
+name: Deploy platform
+
+on:
+  # platform-dev: after CI succeeds on a push to main.
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  # Manual runs; platform-prod is protected by its GitHub environment.
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Platform environment to deploy
+        type: choice
+        options: [platform-dev, platform-prod]
+        default: platform-prod
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'platform-dev' }}
+    concurrency:
+      group: deploy-${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'platform-dev' }}
+      cancel-in-progress: false
+    permissions:
+      id-token: write # OIDC token for aws-actions/configure-aws-credentials
+      contents: read
+    env:
+      PLATFORM_ENV: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'platform-dev' }}
+      # For workflow_run, github.sha is the default branch tip, not the commit CI validated.
+      COMMIT_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      # actions/checkout v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.COMMIT_SHA }}
+          persist-credentials: false
+
+      # actions/setup-node v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # aws-actions/configure-aws-credentials v6.3.0
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Deploy RegistryStack
+        working-directory: infra
+        run: npx cdk deploy "ai-sdlc-platform-registry-${PLATFORM_ENV}" -c "platformEnv=${PLATFORM_ENV}" --require-approval never
+
+      # aws-actions/amazon-ecr-login v2.1.7
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd
+
+      - name: Build and push image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          repository="ai-sdlc-platform-${PLATFORM_ENV}"
+          image="${REGISTRY}/${repository}:${COMMIT_SHA}"
+          # Tags are immutable, so a re-run for the same commit reuses the pushed image.
+          if aws ecr describe-images --repository-name "${repository}" --image-ids "imageTag=${COMMIT_SHA}" > /dev/null 2>&1; then
+            echo "Image ${image} already exists; skipping build."
+            exit 0
+          fi
+          docker build --build-arg "APP_VERSION=${COMMIT_SHA}" -t "${image}" .
+          docker push "${image}"
+
+      - name: Deploy PlatformStack
+        working-directory: infra
+        run: >-
+          npx cdk deploy "ai-sdlc-platform-${PLATFORM_ENV}"
+          -c "platformEnv=${PLATFORM_ENV}" -c "imageTag=${COMMIT_SHA}"
+          --require-approval never --outputs-file cdk-outputs.json
+
+      - name: Smoke test /health
+        run: |
+          url="$(jq -r --arg stack "ai-sdlc-platform-${PLATFORM_ENV}" '.[$stack].ServiceUrl' infra/cdk-outputs.json)"
+          if [ -z "${url}" ] || [ "${url}" = "null" ]; then
+            echo "::error::ServiceUrl output not found"
+            exit 1
+          fi
+          for attempt in $(seq 1 30); do
+            body="$(curl -fsS --max-time 10 "${url}/health" || true)"
+            if [ "$(echo "${body}" | jq -r '.status + " " + .version' 2>/dev/null)" = "ok ${COMMIT_SHA}" ]; then
+              echo "Healthy: ${body}"
+              exit 0
+            fi
+            echo "Attempt ${attempt}: not ready (${body:-no response})"
+            sleep 10
+          done
+          echo "::error::${url}/health did not report ok for ${COMMIT_SHA}"
+          exit 1

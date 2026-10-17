@@ -1,0 +1,13 @@
+node_modules/
+coverage/
+infra/cdk.out/
+*.log
+
+# Secrets stay local; .env.example lists every variable.
+.env
+.env.*
+!.env.example
+
+.claude/settings.local.json
+.DS_Store
+infra/cdk-outputs.json

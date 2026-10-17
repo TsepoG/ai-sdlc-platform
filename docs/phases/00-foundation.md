@@ -11,6 +11,7 @@ trial approver) that does not involve code.
 ## In scope
 
 ### 1. Tooling
+
 - `package.json` (`"type": "module"`, `engines` per `CODING_PRINCIPLES.md`),
   `.nvmrc` (24), `package-lock.json`.
 - npm scripts: `lint`, `format`, `format:check`, `typecheck`, `test`,
@@ -35,6 +36,7 @@ trial approver) that does not involve code.
 - `.gitignore`, `.env.example`.
 
 ### 2. Shared foundations (`src/`)
+
 - `src/config` — loads and validates environment with Zod; the only place that
   reads `process.env`. Variables for now: `NODE_ENV`, `PORT`, `LOG_LEVEL`,
   `APP_VERSION`, `PLATFORM_ENV`.
@@ -47,6 +49,7 @@ trial approver) that does not involve code.
   config and starts listening.
 
 ### 3. Tests (`test/`)
+
 - Config: valid env passes; missing or invalid values throw `ConfigError`.
 - Server: `/health` responds 200 with the version; unknown route is 404; an
   `AppError` is mapped to the right status without leaking internals.
@@ -57,10 +60,12 @@ trial approver) that does not involve code.
   `src/config` is an error.
 
 ### 4. Container
+
 - Multi-stage `Dockerfile` (Node 24 slim, `npm ci --omit=dev` in the runtime
   stage, non-root user, `PORT=8080`), `.dockerignore`.
 
 ### 5. Infrastructure (`infra/`, AWS CDK in JavaScript)
+
 - `RegistryStack` — ECR repository per platform environment (scan on push,
   lifecycle rule). Separate so the image can be pushed before the service
   exists.
@@ -73,6 +78,7 @@ trial approver) that does not involve code.
   without AWS credentials (environment-agnostic synth).
 
 ### 6. GitHub Actions
+
 - `ci.yml` on PRs and pushes to `main`: install, `npm run verify`,
   `npm run audit`, CDK synth, SonarQube scan (uses `SONAR_TOKEN` and
   `SONAR_HOST_URL` secrets; skip with a clear notice if they are not set yet).
@@ -82,19 +88,22 @@ trial approver) that does not involve code.
   deploy PlatformStack → smoke test `GET /health` on the ALB URL.
 
 ### 7. Docs
+
 - `README.md`: what the platform is, prerequisites, setup, scripts, first AWS
   deployment steps (CDK bootstrap, OIDC stack, GitHub environments and
   variables `AWS_DEPLOY_ROLE_ARN`, `AWS_REGION`), and the warning that the ALB
   must go behind SSO or become internal before real data is used.
 - `docs/decisions/0001-javascript-jsdoc.md` and
-  `docs/decisions/0002-fastify.md` (short ADRs; mark 0002 as *proposed* until
+  `docs/decisions/0002-fastify.md` (short ADRs; mark 0002 as _proposed_ until
   the owner confirms).
 
 ## Out of scope (later phases)
+
 Stage configuration, workflow rules, AI contracts and adapters, database,
 Temporal, SSO, web app, Jira/Confluence/Figma/Teams adapters.
 
 ## Acceptance criteria
+
 - [ ] `npm run verify` passes locally with coverage ≥ 90% on all four measures.
 - [ ] `npm run audit` passes.
 - [ ] The vendor-SDK and `process.env` lint boundaries are proven by tests.
@@ -112,6 +121,7 @@ Temporal, SSO, web app, Jira/Confluence/Figma/Teams adapters.
       acceptance criteria it meets.
 
 ## Inputs the owner provides
+
 - AWS account and region for the platform; CDK bootstrap.
 - GitHub environments `platform-dev`, `platform-prod` and their variables.
 - SonarQube host URL, token and project key.

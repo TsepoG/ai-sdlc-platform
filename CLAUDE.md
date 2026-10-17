@@ -21,13 +21,13 @@ the workflow.
 
 ## Where things are
 
-| Need | Read |
-| --- | --- |
-| How to write code here | `CODING_PRINCIPLES.md` (binding) |
-| Architecture, domain model, rules, MVP scope | `docs/design/core-design.md` |
-| What to build now | `docs/phases/<current phase>.md` |
-| Order of phases | `docs/phases/ROADMAP.md` |
-| Decisions already made | `docs/decisions/` |
+| Need                                         | Read                             |
+| -------------------------------------------- | -------------------------------- |
+| How to write code here                       | `CODING_PRINCIPLES.md` (binding) |
+| Architecture, domain model, rules, MVP scope | `docs/design/core-design.md`     |
+| What to build now                            | `docs/phases/<current phase>.md` |
+| Order of phases                              | `docs/phases/ROADMAP.md`         |
+| Decisions already made                       | `docs/decisions/`                |
 
 Precedence when documents disagree: **owner's instruction in chat >
 CODING_PRINCIPLES.md > phase file > core-design.md**. On any real conflict,

@@ -1,0 +1,8 @@
+{
+  "app": "node bin/platform.js",
+  "context": {
+    "platformEnv": "platform-dev",
+    "imageTag": "synth-placeholder",
+    "githubRepo": "TsepoG/ai-sdlc-platform"
+  }
+}
