@@ -40,8 +40,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify (format, lint, typecheck, tests with coverage)
-        run: npm run verify
+      # Same checks as `npm run verify`, split so a failure names the check that broke.
+      - name: Format check
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests with coverage (90% threshold)
+        run: npm run test:coverage
 
       - name: Audit dependencies
         run: npm run audit
@@ -63,3 +73,36 @@ jobs:
           args: >-
             -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
             -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
+
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      COMMIT_SHA: ${{ github.sha }}
+    steps:
+      # actions/checkout v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Build image
+        run: docker build --build-arg "APP_VERSION=${COMMIT_SHA}" -t ai-sdlc-platform:ci .
+
+      - name: Start container and check /health
+        run: |
+          docker run -d --name platform -p 8080:8080 -e PLATFORM_ENV=local ai-sdlc-platform:ci
+          for attempt in $(seq 1 15); do
+            body="$(curl -fsS --max-time 5 http://localhost:8080/health || true)"
+            if [ "$(echo "${body}" | jq -r '.status + " " + .version' 2>/dev/null)" = "ok ${COMMIT_SHA}" ]; then
+              echo "Healthy: ${body}"
+              exit 0
+            fi
+            echo "Attempt ${attempt}: not ready (${body:-no response})"
+            sleep 2
+          done
+          docker logs platform
+          exit 1
+
+      - name: Stop container
+        if: always()
+        run: docker rm -f platform

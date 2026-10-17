@@ -126,7 +126,7 @@ These steps are done once by the owner. Claude Code cannot do them.
 
 ## CI
 
-`ci.yml` runs on pull requests and on pushes to `main`: install, `npm run verify`, `npm run audit`, `cdk synth`, then the SonarQube scan. Add the repository secret `SONAR_TOKEN` and the repository variables `SONAR_ORGANIZATION` and `SONAR_PROJECT_KEY` to enable the scan (SonarQube Cloud needs no host URL); until all three are set, CI prints a notice and skips it. For self-hosted SonarQube Server, also pass a `SONAR_HOST_URL` secret to the scan step and drop the organization argument.
+`ci.yml` runs on pull requests and on pushes to `main`: format check, lint, typecheck, unit tests with the 90% coverage threshold (together the same as `npm run verify`), `npm run audit`, `cdk synth`, then the SonarQube scan. A second job builds the Docker image, starts it and checks `/health`. Add the repository secret `SONAR_TOKEN` and the repository variables `SONAR_ORGANIZATION` and `SONAR_PROJECT_KEY` to enable the scan (SonarQube Cloud needs no host URL); until all three are set, CI prints a notice and skips it. For self-hosted SonarQube Server, also pass a `SONAR_HOST_URL` secret to the scan step and drop the organization argument.
 
 ## Placeholders to fill in
 
