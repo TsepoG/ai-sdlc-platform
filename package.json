@@ -1,0 +1,44 @@
+{
+  "name": "ai-sdlc-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Internal AI-assisted SDLC platform: stage agents draft, named people approve.",
+  "type": "module",
+  "engines": {
+    "node": "^22.22.2 || >=24.15.0"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/server/main.js",
+    "lint": "eslint . --max-warnings=0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --tags-filter=\"!live\"",
+    "test:coverage": "vitest run --coverage --tags-filter=\"!live\"",
+    "test:live": "vitest run --tags-filter=live --passWithNoTests",
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test:coverage",
+    "audit": "npm audit --audit-level=high"
+  },
+  "dependencies": {
+    "fastify": "^5.12.7",
+    "pino": "^10.4.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.19.2",
+    "@vitest/coverage-v8": "^5.0.5",
+    "@vitest/eslint-plugin": "^1.6.27",
+    "aws-cdk": "^2.1145.0",
+    "aws-cdk-lib": "^2.273.0",
+    "constructs": "^10.8.1",
+    "eslint": "^10.13.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-jsdoc": "^65.3.11",
+    "eslint-plugin-n": "^18.4.1",
+    "eslint-plugin-sonarjs": "^4.2.2",
+    "prettier": "^3.9.10",
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.5"
+  }
+}

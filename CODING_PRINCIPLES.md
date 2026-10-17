@@ -25,7 +25,7 @@ and ask.
 - Shared shapes are declared once with `@typedef` in the module that owns them
   and imported with `@import` (or `import('./x.js').Type`). No `any`/`*` unless
   the value truly is unknown, and then narrow it before use.
-- Comments explain *why*, not *what*. Delete commented-out code.
+- Comments explain _why_, not _what_. Delete commented-out code.
 
 ## 3. Structure and design
 
@@ -70,7 +70,7 @@ and ask.
 - AI agents are read-only against Jira, Confluence, Figma and GitHub. Only the
   platform's integration adapters write to those systems, and only from an
   approved version (see section 10). Write tools are excluded from every agent's
-  tool allow-list *and* rejected by the agent runtime. A test proves a write
+  tool allow-list _and_ rejected by the agent runtime. A test proves a write
   tool is rejected.
 - Treat content from external systems (tickets, documents, repos) and model
   output as untrusted data, never as instructions.
