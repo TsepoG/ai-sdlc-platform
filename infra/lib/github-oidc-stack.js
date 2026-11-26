@@ -11,22 +11,29 @@ import { APP_NAME, CDK_BOOTSTRAP_QUALIFIER, DEPLOY_BRANCH, PLATFORM_ENVS } from 
 const GITHUB_OIDC_HOST = 'token.actions.githubusercontent.com';
 const STS_AUDIENCE = 'sts.amazonaws.com';
 
+const SUBJECT_PREFIX_START = 'repo:';
+
 /**
  * @typedef {object} GithubOidcStackProps
- * @property {string} githubRepo GitHub `<owner>/<repo>` allowed to assume the deploy role.
+ * @property {string} githubSubjectPrefix The repo's OIDC `sub` prefix exactly as GitHub issues
+ *   it, e.g. `repo:<owner>@<ownerId>/<repo>@<repoId>` with immutable subject claims.
  */
 
 /**
  * The `sub` claims allowed to assume the role: the main branch, and each GitHub environment.
  * Jobs that declare `environment:` carry the environment sub, not the branch, so the
  * environments' deployment-branch policy (set in GitHub) is what pins them to main.
- * @param {string} githubRepo GitHub `<owner>/<repo>`.
+ * @param {string} subjectPrefix The repo's OIDC `sub` prefix (see GithubOidcStackProps).
  * @returns {string[]} Exact `sub` values.
+ * @throws {Error} When the prefix does not start with `repo:`.
  */
-export function allowedSubjects(githubRepo) {
+export function allowedSubjects(subjectPrefix) {
+  if (!subjectPrefix.startsWith(SUBJECT_PREFIX_START)) {
+    throw new Error(`GitHub subject prefix must start with "${SUBJECT_PREFIX_START}"`);
+  }
   return [
-    `repo:${githubRepo}:ref:refs/heads/${DEPLOY_BRANCH}`,
-    ...PLATFORM_ENVS.map((name) => `repo:${githubRepo}:environment:${name}`),
+    `${subjectPrefix}:ref:refs/heads/${DEPLOY_BRANCH}`,
+    ...PLATFORM_ENVS.map((name) => `${subjectPrefix}:environment:${name}`),
   ];
 }
 
@@ -38,8 +45,9 @@ export class GithubOidcStack extends Stack {
    * @param {string} id Stack ID.
    * @param {GithubOidcStackProps & import('aws-cdk-lib').StackProps} props Stack settings.
    */
-  constructor(scope, id, { githubRepo, ...stackProps }) {
+  constructor(scope, id, { githubSubjectPrefix, ...stackProps }) {
     super(scope, id, stackProps);
+    const subjects = allowedSubjects(githubSubjectPrefix);
 
     const provider = new OidcProviderNative(this, 'GithubProvider', {
       url: `https://${GITHUB_OIDC_HOST}`,
@@ -48,11 +56,11 @@ export class GithubOidcStack extends Stack {
 
     this.deployRole = new Role(this, 'DeployRole', {
       roleName: `${APP_NAME}-github-deploy`,
-      description: `Assumed by GitHub Actions in ${githubRepo} to deploy the platform.`,
+      description: `Assumed by GitHub Actions (${githubSubjectPrefix}) to deploy the platform.`,
       assumedBy: new WebIdentityPrincipal(provider.oidcProviderArn, {
         StringEquals: {
           [`${GITHUB_OIDC_HOST}:aud`]: STS_AUDIENCE,
-          [`${GITHUB_OIDC_HOST}:sub`]: allowedSubjects(githubRepo),
+          [`${GITHUB_OIDC_HOST}:sub`]: subjects,
         },
       }),
     });

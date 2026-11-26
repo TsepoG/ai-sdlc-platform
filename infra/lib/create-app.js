@@ -2,7 +2,7 @@
 import { App } from 'aws-cdk-lib';
 import {
   APP_NAME,
-  DEFAULT_GITHUB_REPO,
+  DEFAULT_GITHUB_SUBJECT_PREFIX,
   ENV_SETTINGS,
   PLACEHOLDER_IMAGE_TAG,
   PLATFORM_ENVS,
@@ -46,7 +46,7 @@ export function createApp(app = new App()) {
       imageTag: contextString(app, 'imageTag', PLACEHOLDER_IMAGE_TAG),
     }),
     new GithubOidcStack(app, `${APP_NAME}-github-oidc`, {
-      githubRepo: contextString(app, 'githubRepo', DEFAULT_GITHUB_REPO),
+      githubSubjectPrefix: contextString(app, 'githubSubjectPrefix', DEFAULT_GITHUB_SUBJECT_PREFIX),
     }),
   ];
   return { app, stacks };

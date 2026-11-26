@@ -3,6 +3,6 @@
   "context": {
     "platformEnv": "platform-dev",
     "imageTag": "synth-placeholder",
-    "githubRepo": "TsepoG/ai-sdlc-platform"
+    "githubSubjectPrefix": "repo:TsepoG@66557542/ai-sdlc-platform@1423470779"
   }
 }
