@@ -116,7 +116,16 @@ and ask.
   and push. Claude Code may create a branch, run read-only git commands
   (`status`, `diff`, `log`, `fetch`) and stage files with `git add` when asked.
   New branches are always created from the latest `origin/main`
-  (`git fetch origin` then `git switch -c <branch> origin/main`).
+  (`git fetch origin` then `git switch -c <branch> --no-track origin/main`).
+  The first push of a branch uses `git push -u origin <branch>`.
+- **Exception: unattended cloud sessions.** When the owner starts a phase
+  as an unattended cloud session, Claude Code may commit to that phase's
+  feature branch, push that branch, and open a **draft** PR. It still
+  never pushes to `main`, force-pushes, merges, approves, marks a PR
+  ready, rebases shared history or tags. The owner reviews the PR and
+  merges. The shared `.claude/settings.json` allows commit and push for
+  cloud sessions, the owner's local `.claude/settings.local.json` keeps
+  them denied, and branch protection on `main` is the real backstop.
 - Once the owner has committed and pushed a phase branch, Claude Code may open
   the pull request with `gh pr create` (title, description and base `main`
   only). It never merges, approves or closes PRs.
@@ -126,6 +135,16 @@ and ask.
   descriptions never include `Co-Authored-By:` trailers, "Generated with Claude
   Code" lines or similar. `.claude/settings.json` sets
   `"attribution": { "commit": "", "pr": "" }` to back this up.
+- **Commits are authored by the owner, never by Claude.** Every commit's
+  author and committer is the owner:
+  `TsepoG <66557542+TsepoG@users.noreply.github.com>`. Before its first commit
+  in any session, Claude Code sets `git config user.name` and
+  `git config user.email` to those values in the repo, and checks them with
+  `git log -1 --format='%an <%ae> / %cn <%ce>'` after committing. It
+  never uses `--author`, never sets a Claude or Anthropic name or email,
+  and never adds `Co-Authored-By:` or any other trailer naming Claude.
+  If a commit comes out with the wrong author, it stops and tells the
+  owner instead of rewriting history.
 - One branch and one PR per phase (or smaller). Conventional Commit messages:
   `feat:`, `fix:`, `test:`, `refactor:`, `docs:`, `chore:`, `ci:`.
 - Small, focused commits that each leave `npm run verify` passing.

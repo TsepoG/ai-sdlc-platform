@@ -70,8 +70,11 @@ stop and ask rather than choosing.
 - **Never commit, push, merge, rebase, reset or tag.** Stop at each natural
   stopping point, summarise the change, and propose a Conventional Commit
   message (no AI attribution).
+- Unattended cloud sessions have a narrow exception, and every commit must be
+  authored by the owner: see `CODING_PRINCIPLES.md` §8.
 - Start each phase on a new branch from the latest `origin/main`
-  (`git fetch origin`, then `git switch -c <branch> origin/main`).
+  (`git fetch origin`, then `git switch -c <branch> --no-track origin/main`).
+  The first push of a branch uses `git push -u origin <branch>`.
 - When the phase is done and the owner has pushed the branch, open the PR with
   `gh pr create --base main` using the phase's PR description. Never merge it.
 - Plan first: list the files you'll create or change and the tests you'll
