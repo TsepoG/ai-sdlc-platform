@@ -95,6 +95,12 @@ curl localhost:8080/health
 
 The image is multi-stage on `node:24-slim`, installs production dependencies only, runs as the non-root `node` user and listens on `8080`. `PLATFORM_ENV` has no default in the image, so the container refuses to start without it.
 
+The base image is pinned by digest (`node:24-slim@sha256:…`) so every build uses the same base and it never changes silently. The pin is the multi-arch index digest, so it works on amd64 and arm64. To pick up Node or Debian fixes, refresh it:
+
+1. Run `docker buildx imagetools inspect node:24-slim` and copy the top-level `Digest:` line (the index, not one of the per-platform manifests listed below it).
+2. Replace the digest in **both** `FROM` lines of the `Dockerfile`.
+3. Rebuild, run the container and check `/health` (CI's `container` job does the same on the PR).
+
 ## Infrastructure
 
 `infra/` defines three stacks per app run. Stacks set no account or region, so they come from the credentials you deploy with.
@@ -134,7 +140,6 @@ These steps are done once by the owner. Claude Code cannot do them.
 - GitHub environment variables `AWS_DEPLOY_ROLE_ARN`, `AWS_REGION` (per environment).
 - AWS account and region (supplied by your credentials; nothing is hard-coded).
 - Secrets Manager `ai-sdlc-platform/<env>/model-api-key` value.
-- `Dockerfile`: pin the base image by digest.
 
 ## Working with Claude Code
 
