@@ -1,5 +1,6 @@
 // @ts-check
 import { App } from 'aws-cdk-lib';
+import { Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../../infra/lib/index.js';
 
@@ -39,7 +40,22 @@ describe('createApp', () => {
     }
   });
 
-  it('accepts githubRepo and imageTag context overrides', () => {
-    expect(() => stackNames({ githubRepo: 'acme/other', imageTag: 'abc123' })).not.toThrow();
+  it('accepts githubSubjectPrefix and imageTag context overrides', () => {
+    expect(() =>
+      stackNames({ githubSubjectPrefix: 'repo:acme@1/other@2', imageTag: 'abc123' }),
+    ).not.toThrow();
+  });
+
+  it('trusts the immutable subject prefix of this repo by default', () => {
+    const { stacks } = createApp(new App());
+    const oidcStack = stacks.find((stack) => stack.node.id === 'ai-sdlc-platform-github-oidc');
+
+    const roles = Template.fromStack(
+      /** @type {import('aws-cdk-lib').Stack} */ (oidcStack),
+    ).findResources('AWS::IAM::Role');
+
+    expect(JSON.stringify(roles)).toContain(
+      'repo:TsepoG@66557542/ai-sdlc-platform@1423470779:environment:platform-dev',
+    );
   });
 });

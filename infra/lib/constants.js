@@ -12,8 +12,13 @@ export const HEALTH_PATH = '/health';
 /** Image tag used for synth and tests, before CI supplies a real commit SHA. */
 export const PLACEHOLDER_IMAGE_TAG = 'synth-placeholder';
 
-/** GitHub `<owner>/<repo>` the deploy role trusts; override with `-c githubRepo=...`. */
-export const DEFAULT_GITHUB_REPO = 'TsepoG/ai-sdlc-platform';
+/**
+ * OIDC `sub` prefix of the repo the deploy role trusts; override with
+ * `-c githubSubjectPrefix=...`. The repo uses GitHub's immutable subject claims, so the prefix
+ * carries owner and repo IDs. Read it with
+ * `gh api repos/<owner>/<repo>/actions/oidc/customization/sub` (field `sub_claim_prefix`).
+ */
+export const DEFAULT_GITHUB_SUBJECT_PREFIX = 'repo:TsepoG@66557542/ai-sdlc-platform@1423470779';
 
 /** Default branch the deploy role trusts for jobs that run without a GitHub environment. */
 export const DEPLOY_BRANCH = 'main';

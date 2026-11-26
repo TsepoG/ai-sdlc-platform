@@ -119,7 +119,7 @@ These steps are done once by the owner. Claude Code cannot do them.
 
 1. **Pick the account and region**, then configure the AWS CLI for it.
 2. **Bootstrap CDK** in that account and region: `cd infra && npx cdk bootstrap`. The deploy role assumes the default `cdk-hnb659fds-*` bootstrap roles; if you bootstrap with a different qualifier, change `CDK_BOOTSTRAP_QUALIFIER` in `infra/lib/constants.js`.
-3. **Deploy the OIDC stack** locally (the workflow cannot create its own role): `cd infra && npx cdk deploy ai-sdlc-platform-github-oidc`. Note the deploy role ARN from the IAM console (`ai-sdlc-platform-github-deploy`). If your GitHub repo is not `TsepoG/ai-sdlc-platform`, pass `-c githubRepo=<owner>/<repo>`.
+3. **Deploy the OIDC stack** locally (the workflow cannot create its own role): `cd infra && npx cdk deploy ai-sdlc-platform-github-oidc`. The deploy role ARN is `arn:aws:iam::<account-id>:role/ai-sdlc-platform-github-deploy` (an IAM role ARN, not the stack's CloudFormation ARN). The role trusts the repo's OIDC subject prefix from `cdk.json` (`githubSubjectPrefix`). This repo uses GitHub's immutable subject claims, so the prefix includes owner and repo IDs (`repo:TsepoG@66557542/ai-sdlc-platform@1423470779`). For another repo, read its prefix with `gh api repos/<owner>/<repo>/actions/oidc/customization/sub` (field `sub_claim_prefix`) and pass `-c githubSubjectPrefix=<prefix>`.
 4. **Create GitHub environments** `platform-dev` and `platform-prod` (Settings → Environments).
    - Set each environment's **deployment branches** to `main` only. The role trusts `repo:<owner>/<repo>:environment:<name>`, so this policy is what keeps environment jobs on `main`.
    - Add required reviewers to `platform-prod`.

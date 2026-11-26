@@ -4,7 +4,7 @@ import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
 import { GithubOidcStack, allowedSubjects } from '../../infra/lib/index.js';
 
-const REPO = 'acme/ai-sdlc-platform';
+const PREFIX = 'repo:acme@111/ai-sdlc-platform@222';
 const HOST = 'token.actions.githubusercontent.com';
 
 /**
@@ -12,16 +12,22 @@ const HOST = 'token.actions.githubusercontent.com';
  * @returns {Template} Synthesized template.
  */
 function synth() {
-  return Template.fromStack(new GithubOidcStack(new App(), 'Oidc', { githubRepo: REPO }));
+  return Template.fromStack(
+    new GithubOidcStack(new App(), 'Oidc', { githubSubjectPrefix: PREFIX }),
+  );
 }
 
 describe('allowedSubjects', () => {
-  it('lists main and both platform environments for the repo', () => {
-    expect(allowedSubjects(REPO)).toEqual([
-      'repo:acme/ai-sdlc-platform:ref:refs/heads/main',
-      'repo:acme/ai-sdlc-platform:environment:platform-dev',
-      'repo:acme/ai-sdlc-platform:environment:platform-prod',
+  it('lists main and both platform environments in the immutable subject format', () => {
+    expect(allowedSubjects(PREFIX)).toEqual([
+      'repo:acme@111/ai-sdlc-platform@222:ref:refs/heads/main',
+      'repo:acme@111/ai-sdlc-platform@222:environment:platform-dev',
+      'repo:acme@111/ai-sdlc-platform@222:environment:platform-prod',
     ]);
+  });
+
+  it('refuses a prefix that is not a GitHub repo subject', () => {
+    expect(() => allowedSubjects('acme/ai-sdlc-platform')).toThrow(/must start with "repo:"/);
   });
 });
 
@@ -45,7 +51,7 @@ describe('GithubOidcStack', () => {
               Condition: {
                 StringEquals: {
                   [`${HOST}:aud`]: 'sts.amazonaws.com',
-                  [`${HOST}:sub`]: allowedSubjects(REPO),
+                  [`${HOST}:sub`]: allowedSubjects(PREFIX),
                 },
               },
             }),
