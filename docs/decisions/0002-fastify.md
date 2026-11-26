@@ -1,6 +1,6 @@
 # 0002. Fastify as the API framework
 
-**Status:** Proposed. Awaiting the owner's confirmation (listed as an open question in CLAUDE.md).
+**Status:** Accepted (2026-11-26).
 
 ## Context
 
@@ -20,5 +20,3 @@ Phase 00 implements it as `buildServer({ config, logger })`, an app factory that
 - Fastify's own schema validation (JSON Schema) is not used; Zod is. Route handlers receive data already validated at the edge.
 - The framework is isolated to `src/server`. If the owner prefers another, only that folder and its tests change; config, errors, logger and later domain code are unaffected.
 - Not yet used: authentication, rate limiting and body-size policy. These arrive with SSO in a later phase.
-
-If the owner rejects this, replace the status with _Rejected_, name the replacement, and update CLAUDE.md.
