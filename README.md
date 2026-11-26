@@ -121,14 +121,20 @@ These steps are done once by the owner. Claude Code cannot do them.
 2. **Bootstrap CDK** in that account and region: `cd infra && npx cdk bootstrap`. The deploy role assumes the default `cdk-hnb659fds-*` bootstrap roles; if you bootstrap with a different qualifier, change `CDK_BOOTSTRAP_QUALIFIER` in `infra/lib/constants.js`.
 3. **Deploy the OIDC stack** locally (the workflow cannot create its own role): `cd infra && npx cdk deploy ai-sdlc-platform-github-oidc`. The deploy role ARN is `arn:aws:iam::<account-id>:role/ai-sdlc-platform-github-deploy` (an IAM role ARN, not the stack's CloudFormation ARN). The role trusts the repo's OIDC subject prefix from `cdk.json` (`githubSubjectPrefix`). This repo uses GitHub's immutable subject claims, so the prefix includes owner and repo IDs (`repo:TsepoG@66557542/ai-sdlc-platform@1423470779`). For another repo, read its prefix with `gh api repos/<owner>/<repo>/actions/oidc/customization/sub` (field `sub_claim_prefix`) and pass `-c githubSubjectPrefix=<prefix>`.
 4. **Create GitHub environments** `platform-dev` and `platform-prod` (Settings → Environments).
-   - Set each environment's **deployment branches** to `main` only. The role trusts `repo:<owner>/<repo>:environment:<name>`, so this policy is what keeps environment jobs on `main`.
+   - Set each environment's **deployment branches** to `main` only. The role trusts `<subject prefix>:environment:<name>`, so this policy is what keeps environment jobs on `main`.
    - Add required reviewers to `platform-prod`.
 5. **Add variables to both environments:** `AWS_DEPLOY_ROLE_ARN` (from step 3) and `AWS_REGION`.
-6. **Enable deploys:** add the **repository** variable `PLATFORM_DEPLOY_ENABLED` with the value `true` (Settings → Secrets and variables → Actions → Variables). Until it is set, the deploy workflow skips every run.
+6. **Enable deploys:** add the **repository** variable `PLATFORM_DEPLOY_ENABLED` with the value `true` (Settings → Secrets and variables → Actions → Variables). Unless it is `true`, the deploy workflow skips every run; set it to `false` to pause deploys.
 7. **Run the deploy.** Merging to `main` deploys `platform-dev` after CI passes. For prod, run the **Deploy platform** workflow manually and choose `platform-prod`. The workflow deploys the registry, builds and pushes the image tagged with the commit SHA, deploys the platform, then checks that `/health` reports that SHA.
 8. **Set the model API key** (when the provider route is decided) by putting the real value in the Secrets Manager secret `ai-sdlc-platform/<env>/model-api-key`. It currently holds the placeholder `REPLACE_ME_SET_MANUALLY` and is not injected into the service.
 
 > **Warning:** the ALB is public and serves plain HTTP. It must be put behind SSO, or made internal, before any real data is used with the platform.
+
+### Current status: platform dev is paused
+
+The pipeline deployed platform dev successfully. To save cost, the platform stack (`ai-sdlc-platform-platform-dev`: VPC, NAT gateway, ALB and service) was destroyed on 26 Nov 2026, and `PLATFORM_DEPLOY_ENABLED` is `false`, so merges to `main` run CI but don't deploy. The registry stack, the GitHub OIDC stack and the CDK bootstrap remain.
+
+To bring dev back (planned for Phase 02, about 7 Dec 2026): set the repository variable `PLATFORM_DEPLOY_ENABLED` to `true`, then merge to `main`. The workflow recreates the platform stack. The ALB gets a new URL each time it is recreated.
 
 ## CI
 

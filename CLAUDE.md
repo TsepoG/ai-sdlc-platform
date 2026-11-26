@@ -35,10 +35,20 @@ stop and ask rather than choosing.
 
 ## Current state
 
-- **Phase:** 00 — Repository foundation (`docs/phases/00-foundation.md`).
-- **MVP target:** core platform + basic Brief agent, signed off by week 9.
-- Nothing is deployed yet. AWS accounts, GitHub environments, SSO and
-  SonarQube credentials are being set up by the owner.
+- **Phase:** 01 — Core rules ([docs/phases/01-core-rules.md](docs/phases/01-core-rules.md)).
+  Dates per phase are in `docs/phases/ROADMAP.md`.
+- **MVP target:** core platform + basic Brief agent, signed off around
+  12 February 2027.
+- **Phase 00 is done.** The pipeline deployed platform dev successfully.
+- **Platform dev is paused** to save cost. The platform stack was destroyed on
+  26 Nov 2026 and the repository variable `PLATFORM_DEPLOY_ENABLED` is `false`,
+  so merges to `main` run CI but don't deploy. The registry stack, the GitHub
+  OIDC stack and the CDK bootstrap remain. Dev comes back for Phase 02 (about
+  7 Dec 2026) by setting `PLATFORM_DEPLOY_ENABLED=true` and merging to `main`.
+- **Settled:**
+  - API framework: Fastify (ADR 0002, accepted).
+  - Code quality: SonarQube Cloud, project key `TsepoG_ai-sdlc-platform`.
+  - AWS region: `af-south-1`.
 
 ## Non-negotiables (summary — details in CODING_PRINCIPLES.md §10)
 
@@ -76,7 +86,7 @@ stop and ask rather than choosing.
 - Never put real company data into tests, fixtures or model calls. Use
   synthetic data until security signs off the model provider route.
 
-## Commands (once Phase 00 lands)
+## Commands
 
 ```bash
 npm ci
@@ -113,6 +123,3 @@ docs/
 - Model provider route: Anthropic API directly, or Claude via Amazon Bedrock.
 - IdP for SSO and the group-to-role mapping.
 - Workflow engine hosting: Temporal Cloud, self-hosted Temporal, or Step Functions.
-- API framework confirmation (Fastify proposed).
-- SonarQube vs SonarCloud, and the project key.
-- AWS region for the platform.
