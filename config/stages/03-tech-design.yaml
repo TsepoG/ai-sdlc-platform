@@ -1,0 +1,22 @@
+# The TDF paper and its forum approval apply only to architecture-level changes.
+key: tech-design
+name: Tech design
+order: 3
+enabled: false
+requiredInputs:
+  - { type: validated-epic, fromStage: ux-design }
+  - { type: figma-designs, fromStage: ux-design }
+  - { type: nfrs, fromStage: brief }
+outputs: [architecture-design, e2e-tech-design, data-model, tdf-paper]
+agent: tech-design-agent
+steps:
+  - { key: draft-design, type: work, agentDrafts: true, assigneeRole: contributor }
+  - { key: design-review, type: gate, approverRole: solution-architect, slaHours: 48 }
+  - {
+      key: tdf-approval,
+      type: gate,
+      approverRole: tdf-forum,
+      slaHours: 48,
+      condition: initiative.flags.requiresTdf,
+    }
+reworkTargets: [brief, ux-design]

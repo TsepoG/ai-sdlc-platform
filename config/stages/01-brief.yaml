@@ -1,0 +1,14 @@
+# Brief: the only stage enabled in the MVP.
+key: brief
+name: Brief
+order: 1
+enabled: true
+requiredInputs:
+  - { type: business-request }
+  - { type: stakeholder-notes }
+outputs: [feature-hypothesis, user-journeys, nfrs, epics]
+agent: product-brief-agent
+steps:
+  - { key: draft-brief, type: work, agentDrafts: true, assigneeRole: contributor }
+  - { key: epic-approval, type: gate, approverRole: product-owner, slaHours: 48 }
+reworkTargets: []

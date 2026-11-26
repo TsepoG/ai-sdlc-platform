@@ -1,0 +1,13 @@
+key: work-breakdown
+name: Work breakdown
+order: 4
+enabled: false
+requiredInputs:
+  - { type: e2e-tech-design, fromStage: tech-design }
+  - { type: validated-epic, fromStage: ux-design }
+outputs: [stories, acceptance-criteria, test-cases]
+agent: work-breakdown-agent
+steps:
+  - { key: draft-stories, type: work, agentDrafts: true, assigneeRole: contributor }
+  - { key: refinement, type: gate, approverRole: tech-lead, slaHours: 48 }
+reworkTargets: [tech-design]

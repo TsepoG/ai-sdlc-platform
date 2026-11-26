@@ -1,0 +1,38 @@
+# Per environment: deploy -> test -> sign-off for SIT, then UAT, then preprod when required.
+key: test
+name: Test
+order: 7
+enabled: false
+requiredInputs:
+  - { type: test-cases, fromStage: work-breakdown }
+  - { type: release-plan, fromStage: deploy }
+outputs: [sit-report, uat-report, preprod-report]
+agent: test-agent
+steps:
+  - { key: deploy-sit, type: action, action: { workflow: deploy.yml, environment: sit } }
+  - { key: sit-testing, type: work, assigneeRole: qa-lead, output: sit-report }
+  - { key: sit-signoff, type: gate, approverRole: qa-lead, slaHours: 48 }
+  - { key: deploy-uat, type: action, action: { workflow: deploy.yml, environment: uat } }
+  - { key: uat-testing, type: work, assigneeRole: business-owner, output: uat-report }
+  - { key: uat-signoff, type: gate, approverRole: business-owner, slaHours: 72 }
+  - {
+      key: deploy-preprod,
+      type: action,
+      action: { workflow: deploy.yml, environment: preprod },
+      condition: initiative.flags.requiresPreprod,
+    }
+  - {
+      key: preprod-checks,
+      type: work,
+      assigneeRole: release-manager,
+      output: preprod-report,
+      condition: initiative.flags.requiresPreprod,
+    }
+  - {
+      key: preprod-signoff,
+      type: gate,
+      approverRole: release-manager,
+      slaHours: 48,
+      condition: initiative.flags.requiresPreprod,
+    }
+reworkTargets: [build, work-breakdown]

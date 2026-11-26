@@ -1,0 +1,24 @@
+# Tests run before the PR (code-and-test) and again in dev after merge (dev-tests).
+key: build
+name: Build
+order: 5
+enabled: false
+requiredInputs:
+  - { type: stories, fromStage: work-breakdown }
+  - { type: acceptance-criteria, fromStage: work-breakdown }
+  - { type: test-cases, fromStage: work-breakdown }
+outputs: [code-change, pre-pr-test-results, dev-test-results]
+agent: build-agent
+steps:
+  - {
+      key: code-and-test,
+      type: work,
+      agentDrafts: true,
+      assigneeRole: contributor,
+      output: pre-pr-test-results,
+    }
+  - { key: pr-review, type: gate, approverRole: senior-engineer, slaHours: 48 }
+  - { key: deploy-dev, type: action, action: { workflow: deploy.yml, environment: dev } }
+  - { key: dev-tests, type: work, output: dev-test-results }
+  - { key: dev-verified, type: gate, approverRole: senior-engineer, slaHours: 48 }
+reworkTargets: [work-breakdown]

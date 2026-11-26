@@ -1,0 +1,12 @@
+key: deploy
+name: Deploy
+order: 6
+enabled: false
+requiredInputs:
+  - { type: dev-test-results, fromStage: build }
+outputs: [release-plan, rollback-plan]
+agent: release-agent
+steps:
+  - { key: draft-release-plan, type: work, agentDrafts: true, assigneeRole: contributor }
+  - { key: release-approval, type: gate, approverRole: release-manager, slaHours: 48 }
+reworkTargets: [build]
