@@ -1,13 +1,17 @@
 # syntax=docker/dockerfile:1
 
-# TODO(owner): pin the base image by digest (node:24-slim@sha256:...) once a refresh policy exists.
-FROM node:24-slim AS deps
+# The base image is pinned to the multi-arch index digest of node:24-slim so builds are
+# reproducible; the tag is kept for readability. To refresh (e.g. for Node or Debian fixes):
+#   docker buildx imagetools inspect node:24-slim
+# copy the top-level "Digest:" (the index, not a per-platform manifest), update BOTH FROM
+# lines below, then rebuild and check GET /health.
+FROM node:24-slim@sha256:873f586f3794f52281bd039bf02c048a0be08fde619338f9941bad1eb6b34530 AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 # Production dependencies only; --ignore-scripts because nothing here needs install scripts.
 RUN npm ci --omit=dev --ignore-scripts
 
-FROM node:24-slim AS runtime
+FROM node:24-slim@sha256:873f586f3794f52281bd039bf02c048a0be08fde619338f9941bad1eb6b34530 AS runtime
 WORKDIR /app
 ARG APP_VERSION=0.0.0-dev
 ENV NODE_ENV=production \
