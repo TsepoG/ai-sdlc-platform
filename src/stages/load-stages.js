@@ -37,6 +37,22 @@ async function listStageFiles(dir) {
 }
 
 /**
+ * Read one stage file.
+ * @param {string} dir Stages directory.
+ * @param {string} source File name.
+ * @returns {Promise<string>} File contents.
+ * @throws {StageConfigError} When the file cannot be read, naming the file.
+ */
+async function readStageFile(dir, source) {
+  try {
+    return await readFile(join(dir, source), 'utf8');
+  } catch (error) {
+    const message = `Cannot read stage file: ${error instanceof Error ? error.message : String(error)}`;
+    throw new StageConfigError([{ source, path: ROOT_PATH, message }], { cause: error });
+  }
+}
+
+/**
  * Load every stage file in a directory, validate each and the set as a whole.
  * @param {string} dir Stages directory, e.g. `config/stages`.
  * @returns {Promise<ReadonlyArray<Readonly<StageDefinition>>>} Stages sorted by `order`, frozen.
@@ -49,9 +65,8 @@ export async function loadStages(dir) {
   /** @type {StageConfigIssue[]} */
   const issues = [];
   for (const source of files) {
-    const text = await readFile(join(dir, source), 'utf8');
     try {
-      entries.push({ source, stage: parseStage(text, source) });
+      entries.push({ source, stage: parseStage(await readStageFile(dir, source), source) });
     } catch (error) {
       if (!(error instanceof StageConfigError)) {
         throw error;

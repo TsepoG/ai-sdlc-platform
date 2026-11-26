@@ -1,5 +1,5 @@
 // @ts-check
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -78,6 +78,15 @@ describe('loadStages', () => {
     const issues = await issuesFromAsync(loadStages(dir));
 
     expect(issues).toEqual([expect.objectContaining({ source: dir, path: '(root)' })]);
+  });
+
+  it('names a stage file that cannot be read', async () => {
+    await writeStages(validPair());
+    await mkdir(join(dir, '03-folder.yaml'));
+
+    const issues = await issuesFromAsync(loadStages(dir));
+
+    expect(issues).toEqual([expect.objectContaining({ source: '03-folder.yaml', path: '(root)' })]);
   });
 
   it('reports problems from every invalid file together', async () => {
