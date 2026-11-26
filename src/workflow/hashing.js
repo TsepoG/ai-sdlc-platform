@@ -8,6 +8,19 @@ const CRLF = /\r\n/g;
 const LF = '\n';
 
 /**
+ * Order strings by UTF-16 code unit, independent of locale (the order a bare `sort()` uses).
+ * @param {string} a First string.
+ * @param {string} b Second string.
+ * @returns {number} Negative, zero or positive, as `Array.prototype.sort` expects.
+ */
+function byCodeUnit(a, b) {
+  if (a < b) {
+    return -1;
+  }
+  return a > b ? 1 : 0;
+}
+
+/**
  * SHA-256 hex digest of a UTF-8 string.
  * @param {string} text Input.
  * @returns {string} 64 lowercase hex characters.
@@ -41,7 +54,7 @@ export function packageHash(versionHashes) {
       `Version hash at index ${malformed} is not a SHA-256 hex digest (64 lowercase hex characters)`,
     );
   }
-  return sha256Hex([...versionHashes].sort().join(LF));
+  return sha256Hex([...versionHashes].sort(byCodeUnit).join(LF));
 }
 
 /**

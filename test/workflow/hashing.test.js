@@ -35,7 +35,13 @@ describe('contentHash', () => {
 
 describe('packageHash', () => {
   it('hashes the sorted version hashes joined with newlines', () => {
-    expect(packageHash([HASH_B, HASH_A])).toBe(sha256([HASH_A, HASH_B].sort().join('\n')));
+    const [low, high] = HASH_A < HASH_B ? [HASH_A, HASH_B] : [HASH_B, HASH_A];
+
+    expect(packageHash([high, low])).toBe(sha256(`${low}\n${high}`));
+  });
+
+  it('keeps a repeated version hash rather than dropping it', () => {
+    expect(packageHash([HASH_A, HASH_A])).toBe(sha256(`${HASH_A}\n${HASH_A}`));
   });
 
   it('ignores the order of the version hashes', () => {

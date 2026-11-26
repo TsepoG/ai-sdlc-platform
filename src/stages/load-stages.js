@@ -27,7 +27,9 @@ async function listStageFiles(dir) {
     const message = `Cannot read stages directory: ${error instanceof Error ? error.message : String(error)}`;
     throw new StageConfigError([{ source: dir, path: ROOT_PATH, message }], { cause: error });
   }
-  const files = names.filter((name) => name.endsWith(STAGE_FILE_EXTENSION)).sort();
+  const files = names
+    .filter((name) => name.endsWith(STAGE_FILE_EXTENSION))
+    .sort((a, b) => a.localeCompare(b));
   if (files.length === 0) {
     throw new StageConfigError([
       { source: dir, path: ROOT_PATH, message: `No ${STAGE_FILE_EXTENSION} stage files found` },

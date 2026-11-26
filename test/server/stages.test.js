@@ -50,9 +50,9 @@ describe('GET /stages', () => {
 
     const response = await app.inject({ method: 'GET', url: '/stages' });
 
-    expect(Object.keys(response.json().stages[0]).sort()).toEqual(
-      ['enabled', 'key', 'name', 'order', 'steps'].sort(),
-    );
+    const keys = Object.keys(response.json().stages[0]);
+    expect(keys).toHaveLength(5);
+    expect(keys).toEqual(expect.arrayContaining(['enabled', 'key', 'name', 'order', 'steps']));
   });
 
   it('refuses writes to /stages', async () => {
