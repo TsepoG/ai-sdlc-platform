@@ -15,5 +15,6 @@ export {
   SeparationOfDutiesError,
   StageConfigError,
   StalePackageError,
+  UnauthenticatedError,
 } from './domain-errors.js';
 /** @typedef {import('./domain-errors.js').StageConfigIssue} StageConfigIssue */

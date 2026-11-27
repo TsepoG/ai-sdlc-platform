@@ -2,6 +2,7 @@
 import { AppError } from './app-error.js';
 
 const HTTP_BAD_REQUEST = 400;
+const HTTP_UNAUTHORIZED = 401;
 const HTTP_FORBIDDEN = 403;
 const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409;
@@ -153,4 +154,12 @@ export class MigrationError extends FixedAppError {
   static statusCode = HTTP_SERVER_ERROR;
   /** @override */
   static code = 'MIGRATION_FAILED';
+}
+
+/** The request carries no usable identity. */
+export class UnauthenticatedError extends FixedAppError {
+  /** @override */
+  static statusCode = HTTP_UNAUTHORIZED;
+  /** @override */
+  static code = 'UNAUTHENTICATED';
 }

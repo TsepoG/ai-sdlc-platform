@@ -15,6 +15,7 @@ import {
   SeparationOfDutiesError,
   StageConfigError,
   StalePackageError,
+  UnauthenticatedError,
 } from '../../src/errors/index.js';
 
 describe.each([
@@ -30,6 +31,7 @@ describe.each([
   ['BlockingQuestionsError', BlockingQuestionsError, 409, 'BLOCKING_QUESTIONS_OPEN'],
   ['ValidationError', ValidationError, 400, 'VALIDATION_FAILED'],
   ['MigrationError', MigrationError, 500, 'MIGRATION_FAILED'],
+  ['UnauthenticatedError', UnauthenticatedError, 401, 'UNAUTHENTICATED'],
 ])('%s', (name, ErrorClass, statusCode, code) => {
   it('is an AppError with its own name, status and stable code', () => {
     const error = new ErrorClass('message');
