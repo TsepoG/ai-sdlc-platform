@@ -10,6 +10,7 @@ import {
   Secret as EcsSecret,
 } from 'aws-cdk-lib/aws-ecs';
 import { ApplicationLoadBalancedFargateService } from 'aws-cdk-lib/aws-ecs-patterns';
+import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
 import { createArtifactBucket } from './artifact-bucket.js';
@@ -29,6 +30,8 @@ const HEALTH_CHECK_GRACE_SECONDS = 60;
 const HEALTH_CHECK_INTERVAL_SECONDS = 15;
 const PLACEHOLDER_SECRET_VALUE = 'REPLACE_ME_SET_MANUALLY';
 const SUBNET_CIDR_MASK = 24;
+/** Prefix of every content key (src/content stores `sha256/<hash>`). */
+const CONTENT_KEY_PREFIX = 'sha256/';
 
 /**
  * @typedef {object} PlatformStackProps
@@ -137,9 +140,14 @@ export class PlatformStack extends Stack {
       Port.tcp(POSTGRES_PORT),
       'Service to database',
     );
-    // Content is written once and never deleted, so the task gets read and put only.
-    this.artifactBucket.grantRead(this.service.taskDefinition.taskRole);
-    this.artifactBucket.grantPut(this.service.taskDefinition.taskRole);
+    // Content is written once and never deleted, so the task may only get and put objects under
+    // the content-addressed prefix: no list, delete, tagging, retention or bucket access.
+    this.service.taskDefinition.taskRole.addToPrincipalPolicy(
+      new PolicyStatement({
+        actions: ['s3:GetObject', 's3:PutObject'],
+        resources: [this.artifactBucket.arnForObjects(`${CONTENT_KEY_PREFIX}*`)],
+      }),
+    );
     this.service.targetGroup.configureHealthCheck({
       path: HEALTH_PATH,
       interval: Duration.seconds(HEALTH_CHECK_INTERVAL_SECONDS),

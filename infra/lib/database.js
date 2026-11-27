@@ -1,6 +1,12 @@
 // @ts-check
 import { Duration, RemovalPolicy } from 'aws-cdk-lib';
-import { InstanceClass, InstanceSize, InstanceType, SubnetType } from 'aws-cdk-lib/aws-ec2';
+import {
+  InstanceClass,
+  InstanceSize,
+  InstanceType,
+  SecurityGroup,
+  SubnetType,
+} from 'aws-cdk-lib/aws-ec2';
 import {
   Credentials,
   DatabaseInstance,
@@ -30,11 +36,18 @@ const BACKUP_RETENTION_DAYS = 7;
  * @returns {DatabaseInstance} The database.
  */
 export function createDatabase(scope, { vpc, platformEnv, protectData }) {
+  // The database only answers connections; it never needs to open one.
+  const securityGroup = new SecurityGroup(scope, 'DatabaseSecurityGroup', {
+    vpc,
+    description: 'Platform database: inbound from the service only, no outbound',
+    allowAllOutbound: false,
+  });
   return new DatabaseInstance(scope, 'Database', {
     engine: DatabaseInstanceEngine.postgres({ version: POSTGRES_VERSION }),
     instanceType: InstanceType.of(InstanceClass.T4G, InstanceSize.MICRO),
     vpc,
     vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
+    securityGroups: [securityGroup],
     publiclyAccessible: false,
     port: POSTGRES_PORT,
     databaseName: DATABASE_NAME,
@@ -48,5 +61,7 @@ export function createDatabase(scope, { vpc, platformEnv, protectData }) {
     multiAz: protectData,
     deletionProtection: protectData,
     removalPolicy: protectData ? RemovalPolicy.SNAPSHOT : RemovalPolicy.DESTROY,
+    // CloudFormation deletes automated backups with the instance by default; keep them in prod.
+    deleteAutomatedBackups: protectData ? false : undefined,
   });
 }

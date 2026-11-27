@@ -88,6 +88,16 @@ describe('RDS for PostgreSQL', () => {
     expect(db.Properties.MultiAZ).toBe(true);
     expect(db.Properties.DeletionProtection).toBe(true);
     expect(db.DeletionPolicy).toBe('Snapshot');
+    expect(db.Properties.DeleteAutomatedBackups).toBe(false);
+  });
+
+  it('lets the database start no outbound connections', () => {
+    const template = synth('platform-dev');
+    const [dbSecurityGroup] = only(template, 'AWS::RDS::DBInstance').Properties.VPCSecurityGroups;
+    const groupId = dbSecurityGroup['Fn::GetAtt'][0];
+    const group = template.toJSON().Resources[groupId].Properties;
+
+    expect(JSON.stringify(group.SecurityGroupEgress)).not.toContain('0.0.0.0/0');
   });
 
   it('generates its credentials into a named Secrets Manager secret', () => {
@@ -217,7 +227,7 @@ describe('S3 artifact bucket', () => {
     ).not.toThrow();
   });
 
-  it('lets the task role read and write objects, but not delete them', () => {
+  it('lets the task role get and put content objects, and nothing else in S3', () => {
     const template = synth('platform-dev');
     const taskRole = only(template, 'AWS::ECS::TaskDefinition').Properties.TaskRoleArn;
     const taskRoleId = taskRole['Fn::GetAtt'][0];
@@ -233,10 +243,9 @@ describe('S3 artifact bucket', () => {
         (/** @type {{ Action: string | string[] }} */ statement) => [statement.Action].flat(),
       ),
     );
-    expect(actions).toEqual(expect.arrayContaining(['s3:GetObject*', 's3:PutObject']));
-    expect(actions.some((/** @type {string} */ action) => action.startsWith('s3:Delete'))).toBe(
-      false,
-    );
+    expect(
+      actions.filter((/** @type {string} */ action) => action.startsWith('s3:')).sort(),
+    ).toEqual(['s3:GetObject', 's3:PutObject']);
     expect(
       actions.some((/** @type {string} */ action) => action.startsWith('secretsmanager:')),
     ).toBe(false);
