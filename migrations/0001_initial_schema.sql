@@ -202,7 +202,6 @@ CREATE TABLE jobs (
   status text NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending', 'running', 'done', 'failed')),
   attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
-  max_attempts integer NOT NULL DEFAULT 5 CHECK (max_attempts > 0),
   run_after timestamptz NOT NULL DEFAULT now(),
   locked_at timestamptz,
   last_error text,

@@ -1,4 +1,5 @@
 // @ts-check
+import { enqueueJob } from '../jobs/index.js';
 import { audit, updateInitiative } from './context.js';
 import { findStaleRuns, nextStage } from './plan.js';
 import { startStageRun } from './stage-runs.js';
@@ -43,6 +44,22 @@ export async function approveStage(tx, deps, actor, approval) {
       stageKey: stage.key,
       packageId,
     },
+  );
+  // Outbox: downstream work for an approval is queued in the approving transaction, keyed by the
+  // approved package so a retry can never queue it twice. Phase 02 only logs it.
+  await enqueueJob(
+    tx,
+    {
+      type: 'log',
+      payload: {
+        event: 'stage.approved',
+        initiativeId: initiative.id,
+        stageKey: stage.key,
+        packageId,
+      },
+      idempotencyKey: `stage-approved:${packageId}`,
+    },
+    { now: deps.now },
   );
   await flagUpstreamChanged(tx, deps, actor, approval);
   await handOff(tx, deps, actor, approval);

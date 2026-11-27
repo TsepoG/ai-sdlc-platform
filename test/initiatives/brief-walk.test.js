@@ -144,6 +144,25 @@ describe('walking an Initiative through the Brief stage', () => {
     ]);
   });
 
+  it('enqueues an outbox job for the approval in the same transaction', async () => {
+    const { rows } = await harness.db.pool.query(
+      'SELECT type, status, payload, idempotency_key FROM jobs',
+    );
+
+    expect(rows).toEqual([
+      {
+        type: 'log',
+        status: 'pending',
+        payload: expect.objectContaining({
+          event: 'stage.approved',
+          initiativeId,
+          stageKey: 'brief',
+        }),
+        idempotency_key: expect.stringMatching(/^stage-approved:/),
+      },
+    ]);
+  });
+
   it('lists every step in the timeline, in order', async () => {
     const timeline = await harness.service.getTimeline(initiativeId);
 
