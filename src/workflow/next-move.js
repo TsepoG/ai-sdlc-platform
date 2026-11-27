@@ -57,11 +57,10 @@ const MOVES = Object.freeze({
     requireStepType(step, outcome, ['action', 'work']);
     // An agent error is never the upstream stage's fault, so it pauses rather than reworks.
     const agentDraft = step.type === 'work' && step.agentDrafts === true;
-    const [firstTarget] = stage.reworkTargets;
-    if (step.type === 'action' || agentDraft || firstTarget === undefined) {
+    if (step.type === 'action' || agentDraft || stage.reworkTargets.length === 0) {
       return { kind: 'paused', stepKey: step.key };
     }
-    return { kind: 'rework', stageKey: firstTarget };
+    return { kind: 'rework', stageKey: stage.reworkTargets[0] };
   },
 });
 
