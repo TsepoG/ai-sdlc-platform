@@ -122,7 +122,7 @@ CREATE TABLE step_runs (
 
 CREATE TABLE gate_runs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  step_run_id uuid NOT NULL UNIQUE REFERENCES step_runs (id),
+  step_run_id uuid NOT NULL REFERENCES step_runs (id),
   package_id uuid NOT NULL REFERENCES review_packages (id),
   approver_role text NOT NULL,
   state text NOT NULL CHECK (state IN ('open', 'decided', 'cancelled')),
@@ -131,6 +131,9 @@ CREATE TABLE gate_runs (
   opened_at timestamptz NOT NULL DEFAULT now(),
   closed_at timestamptz
 );
+-- A resubmission can reopen a step's gate on a new package, but only one gate run per step is
+-- ever open at a time.
+CREATE UNIQUE INDEX gate_runs_one_open_idx ON gate_runs (step_run_id) WHERE state = 'open';
 
 CREATE TABLE decisions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -139,6 +139,16 @@ describe('unique constraints that make retries safe', () => {
     ).rejects.toThrow(/duplicate key/);
   });
 
+  it('refuses a second open gate run on one step run', async () => {
+    await expect(
+      db.pool.query(
+        `INSERT INTO gate_runs (step_run_id, package_id, approver_role, state)
+         VALUES ($1, $2, 'product-owner', 'open')`,
+        [ids.stepRun, ids.package],
+      ),
+    ).rejects.toThrow(/duplicate key/);
+  });
+
   it('refuses a second open package on one stage run', async () => {
     await expect(
       db.pool.query(

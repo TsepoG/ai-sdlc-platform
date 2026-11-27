@@ -1,0 +1,12 @@
+key: beta
+name: Beta
+order: 2
+enabled: true
+requiredInputs:
+  - { type: alpha-doc, fromStage: alpha }
+outputs: [beta-doc]
+agent: beta-agent
+steps:
+  - { key: draft-beta, type: work, agentDrafts: true, assigneeRole: contributor }
+  - { key: approve-beta, type: gate, approverRole: lead }
+reworkTargets: [alpha]

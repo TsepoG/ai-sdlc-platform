@@ -1,0 +1,13 @@
+# Test fixture: three enabled stages, for rework and upstream-changed tests.
+key: alpha
+name: Alpha
+order: 1
+enabled: true
+requiredInputs:
+  - { type: business-request }
+outputs: [alpha-doc]
+agent: alpha-agent
+steps:
+  - { key: draft-alpha, type: work, agentDrafts: true, assigneeRole: contributor }
+  - { key: approve-alpha, type: gate, approverRole: lead, slaHours: 24 }
+reworkTargets: []
