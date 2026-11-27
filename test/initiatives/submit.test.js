@@ -232,6 +232,27 @@ describe('open questions and comments', () => {
     );
   });
 
+  it('waits for the Initiative lock before commenting, like every other write', async () => {
+    const version = await save('epics');
+    const holder = await harness.db.newPool().connect();
+    await holder.query('BEGIN');
+    await holder.query('SELECT 1 FROM initiatives WHERE id = $1 FOR UPDATE', [initiativeId]);
+    let settled = false;
+
+    const comment = harness.service
+      .addComment(version.id, { body: 'Waiting' }, REVIEWER)
+      .finally(() => {
+        settled = true;
+      });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    const settledWhileLocked = settled;
+    await holder.query('COMMIT');
+    holder.release();
+
+    expect(settledWhileLocked).toBe(false);
+    await expect(comment).resolves.toEqual({ id: expect.any(String) });
+  });
+
   it('records comments and questions in the timeline', async () => {
     const version = await save('epics');
     await harness.service.addComment(

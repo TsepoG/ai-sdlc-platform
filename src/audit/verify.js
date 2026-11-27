@@ -1,4 +1,5 @@
 // @ts-check
+import { withReadSnapshot } from '../db/index.js';
 import { chainHash, GENESIS_HASH } from './chain.js';
 import { SELECT_BATCH_AFTER, toStoredEvent } from './read.js';
 
@@ -28,19 +29,8 @@ const DEFAULT_BATCH_SIZE = 500;
  * @returns {Promise<ChainVerification>} Whether the chain verifies, and how many events were checked.
  * @throws {Error} When the database cannot be read.
  */
-export async function verifyAuditChain(pool, { batchSize = DEFAULT_BATCH_SIZE } = {}) {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-    const result = await verifySnapshot(client, batchSize);
-    await client.query('COMMIT');
-    return result;
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
+export function verifyAuditChain(pool, { batchSize = DEFAULT_BATCH_SIZE } = {}) {
+  return withReadSnapshot(pool, (tx) => verifySnapshot(tx, batchSize));
 }
 
 /**

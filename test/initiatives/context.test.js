@@ -35,18 +35,18 @@ describe('workflowTransaction', () => {
     const other = db.newPool();
 
     await workflowTransaction(deps, async (tx) => {
-      audit(tx, deps, ACTOR, 'workflow.first', { type: 'test', id: 'a' }, INITIATIVE);
+      audit(tx, deps, ACTOR, 'workflow.first', { type: 'comment', id: 'a' }, INITIATIVE);
       // A concurrent append must not wait for this transaction: the head is not locked yet.
       await withTransaction(other, (otherTx) =>
         appendAuditEvent(otherTx, {
           actorType: 'system',
           actorId: 'other',
           action: 'other.event',
-          entityType: 'test',
+          entityType: 'comment',
           entityId: 'b',
         }),
       );
-      audit(tx, deps, ACTOR, 'workflow.second', { type: 'test', id: 'c' }, INITIATIVE);
+      audit(tx, deps, ACTOR, 'workflow.second', { type: 'comment', id: 'c' }, INITIATIVE);
     });
 
     const actions = (await listAuditEvents(db.pool)).map((event) => event.action);
@@ -56,7 +56,7 @@ describe('workflowTransaction', () => {
 
   it('appends nothing when the work fails', async () => {
     await workflowTransaction(deps, async (tx) => {
-      audit(tx, deps, ACTOR, 'workflow.first', { type: 'test', id: 'a' }, INITIATIVE);
+      audit(tx, deps, ACTOR, 'workflow.first', { type: 'comment', id: 'a' }, INITIATIVE);
       throw new Error('abort');
     }).catch(() => undefined);
 
@@ -65,7 +65,7 @@ describe('workflowTransaction', () => {
 
   it('refuses audit() outside a workflow transaction', async () => {
     await withTransaction(db.pool, async (tx) => {
-      expect(() => audit(tx, deps, ACTOR, 'x', { type: 'test', id: 'a' }, INITIATIVE)).toThrow(
+      expect(() => audit(tx, deps, ACTOR, 'x', { type: 'comment', id: 'a' }, INITIATIVE)).toThrow(
         /workflowTransaction/,
       );
     });

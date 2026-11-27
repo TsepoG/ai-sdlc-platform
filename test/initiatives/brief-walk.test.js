@@ -146,11 +146,13 @@ describe('walking an Initiative through the Brief stage', () => {
 
   it('enqueues an outbox job for the approval in the same transaction', async () => {
     const { rows } = await harness.db.pool.query(
-      'SELECT type, status, payload, idempotency_key FROM jobs',
+      `SELECT j.type, j.status, j.payload, j.idempotency_key, d.outcome AS decision_outcome
+       FROM jobs j JOIN decisions d ON d.id = j.decision_id`,
     );
 
     expect(rows).toEqual([
       {
+        decision_outcome: 'approve',
         type: 'log',
         status: 'pending',
         payload: expect.objectContaining({

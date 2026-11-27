@@ -14,6 +14,7 @@ import { startStageRun } from './stage-runs.js';
  * @property {StageRunRow} stageRun Stage run being approved.
  * @property {StageDefinition} stage Its definition.
  * @property {string} packageId The approved package.
+ * @property {string} [decisionId] The approving decision; outbox jobs record it.
  */
 
 /**
@@ -26,7 +27,7 @@ import { startStageRun } from './stage-runs.js';
  * @returns {Promise<void>}
  */
 export async function approveStage(tx, deps, actor, approval) {
-  const { initiative, stageRun, stage, packageId } = approval;
+  const { initiative, stageRun, stage, packageId, decisionId } = approval;
   const now = deps.now();
   await tx.query(`UPDATE review_packages SET status = 'approved' WHERE id = $1`, [packageId]);
   await tx.query(`UPDATE stage_runs SET state = 'approved', completed_at = $2 WHERE id = $1`, [
@@ -58,6 +59,7 @@ export async function approveStage(tx, deps, actor, approval) {
         packageId,
       },
       idempotencyKey: `stage-approved:${packageId}`,
+      decisionId,
     },
     { now: deps.now },
   );

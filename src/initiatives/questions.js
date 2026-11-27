@@ -112,6 +112,7 @@ export async function answerQuestion(deps, questionId, input, actor) {
 export async function addComment(deps, versionId, input, actor) {
   const initiativeId = await initiativeOfVersion(deps, versionId);
   return workflowTransaction(deps, async (tx) => {
+    await lockInitiative(tx, initiativeId);
     const { rows } = await tx.query(
       `INSERT INTO comments (version_id, anchor, author_id, body, created_at)
        VALUES ($1, $2, $3, $4, $5) RETURNING id`,

@@ -12,6 +12,12 @@ BEGIN
 END;
 $$;
 
+-- Kinds of record the audit trail and external links refer to.
+CREATE DOMAIN entity_type AS text CHECK (VALUE IN (
+  'initiative', 'stage_run', 'step_run', 'artifact', 'artifact_version', 'review_package',
+  'gate_run', 'decision', 'open_question', 'comment', 'job', 'external_link'
+));
+
 CREATE SEQUENCE initiative_key_seq;
 
 CREATE TABLE initiatives (
@@ -45,6 +51,9 @@ CREATE TABLE stage_runs (
   UNIQUE (initiative_id, stage_key, attempt)
 );
 CREATE INDEX stage_runs_initiative_idx ON stage_runs (initiative_id);
+-- At most one active run of a stage per Initiative.
+CREATE UNIQUE INDEX stage_runs_one_active_idx ON stage_runs (initiative_id, stage_key)
+  WHERE state = 'active';
 
 CREATE TABLE artifacts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -55,6 +64,7 @@ CREATE TABLE artifacts (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX artifacts_stage_run_idx ON artifacts (stage_run_id);
+CREATE INDEX artifacts_initiative_idx ON artifacts (initiative_id);
 
 CREATE TABLE artifact_versions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -86,6 +96,7 @@ CREATE TABLE review_packages (
 -- At most one open package per stage run: a retried submission can't open a second one.
 CREATE UNIQUE INDEX review_packages_one_open_idx ON review_packages (stage_run_id)
   WHERE status = 'open';
+CREATE INDEX review_packages_stage_run_idx ON review_packages (stage_run_id);
 
 ALTER TABLE stage_runs
   ADD CONSTRAINT stage_runs_input_package_fk
@@ -134,6 +145,8 @@ CREATE TABLE gate_runs (
 -- A resubmission can reopen a step's gate on a new package, but only one gate run per step is
 -- ever open at a time.
 CREATE UNIQUE INDEX gate_runs_one_open_idx ON gate_runs (step_run_id) WHERE state = 'open';
+CREATE INDEX gate_runs_step_run_idx ON gate_runs (step_run_id);
+CREATE INDEX gate_runs_package_idx ON gate_runs (package_id);
 
 CREATE TABLE decisions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -161,7 +174,8 @@ CREATE TABLE open_questions (
   answered_by_id text,
   answered_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
-  CHECK ((status = 'answered') = (answer IS NOT NULL AND answered_by_id IS NOT NULL))
+  CHECK ((status = 'answered') =
+    (answer IS NOT NULL AND answered_by_id IS NOT NULL AND answered_at IS NOT NULL))
 );
 CREATE INDEX open_questions_version_idx ON open_questions (version_id);
 
@@ -211,10 +225,12 @@ CREATE TABLE jobs (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX jobs_ready_idx ON jobs (run_after) WHERE status = 'pending';
+-- Running jobs by lease time, for reclaiming or failing jobs whose worker died.
+CREATE INDEX jobs_leased_idx ON jobs (locked_at) WHERE status = 'running';
 
 CREATE TABLE external_links (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  entity_type text NOT NULL,
+  entity_type entity_type NOT NULL,
   entity_id uuid NOT NULL,
   system text NOT NULL CHECK (system IN ('jira', 'confluence', 'figma', 'github', 'teams')),
   external_id text NOT NULL,
@@ -230,7 +246,7 @@ CREATE TABLE audit_events (
   actor_type text NOT NULL CHECK (actor_type IN ('user', 'agent', 'system')),
   actor_id text NOT NULL,
   action text NOT NULL,
-  entity_type text NOT NULL,
+  entity_type entity_type NOT NULL,
   entity_id text NOT NULL,
   initiative_id uuid,
   data jsonb NOT NULL DEFAULT '{}',
@@ -250,3 +266,15 @@ CREATE TABLE audit_chain_head (
   last_hash text NOT NULL CHECK (last_hash ~ '^[0-9a-f]{64}$')
 );
 INSERT INTO audit_chain_head (id, last_seq, last_hash) VALUES (true, 0, repeat('0', 64));
+-- The head is updated on every append but must never disappear, or every later append fails.
+CREATE FUNCTION reject_removal() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'rows of % cannot be removed', TG_TABLE_NAME
+    USING ERRCODE = 'restrict_violation';
+END;
+$$;
+CREATE TRIGGER audit_chain_head_no_delete BEFORE DELETE ON audit_chain_head
+  FOR EACH ROW EXECUTE FUNCTION reject_removal();
+CREATE TRIGGER audit_chain_head_no_truncate BEFORE TRUNCATE ON audit_chain_head
+  FOR EACH STATEMENT EXECUTE FUNCTION reject_removal();

@@ -1,6 +1,6 @@
 // @ts-check
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { withTransaction } from '../../src/db/index.js';
+import { withReadSnapshot, withTransaction } from '../../src/db/index.js';
 import { createTestDatabase } from './test-database.js';
 
 /** @type {import('./test-database.js').TestDatabase} */
@@ -54,5 +54,28 @@ describe('withTransaction', () => {
     }).catch(() => undefined);
 
     expect(db.pool.totalCount).toBe(db.pool.idleCount);
+  });
+});
+
+describe('withReadSnapshot', () => {
+  it('sees one snapshot: a commit made meanwhile is not visible inside it', async () => {
+    const other = db.newPool();
+
+    const seen = await withReadSnapshot(db.pool, async (tx) => {
+      const before = await tx.query('SELECT count(*)::int AS n FROM t');
+      await other.query('INSERT INTO t VALUES (100)');
+      const after = await tx.query('SELECT count(*)::int AS n FROM t');
+      return [before.rows[0].n, after.rows[0].n];
+    });
+
+    expect(seen[0]).toBe(seen[1]);
+    expect(await values()).toContain(100);
+  });
+
+  it('refuses writes', async () => {
+    await expect(
+      withReadSnapshot(db.pool, (tx) => tx.query('INSERT INTO t VALUES (101)')),
+    ).rejects.toThrow(/read-only/);
+    expect(await values()).not.toContain(101);
   });
 });

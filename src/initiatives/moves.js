@@ -24,6 +24,7 @@ import {
  * @property {StageDefinition} stage Its definition.
  * @property {StepRunRow} stepRun The step that finished.
  * @property {string} packageId Package the step finished with.
+ * @property {string} [decisionId] Decision that caused the move, when a gate was decided.
  */
 
 /**

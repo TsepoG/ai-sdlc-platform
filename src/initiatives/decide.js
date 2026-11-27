@@ -93,7 +93,7 @@ export async function decide(deps, gateRunId, input, actor, roles) {
       tx,
       deps,
       actor,
-      { initiative, stageRun, stage, stepRun, packageId: gate.package_id },
+      { initiative, stageRun, stage, stepRun, packageId: gate.package_id, decisionId },
       move,
     );
     return { decisionId, move };

@@ -80,7 +80,7 @@ beforeAll(async () => {
   ids.audit = await insertId(
     `INSERT INTO audit_events (id, occurred_at, actor_type, actor_id, action, entity_type,
          entity_id, data, prev_hash, hash)
-       VALUES (gen_random_uuid(), now(), 'system', 'test', 'test.event', 'test', 'x', '{}', $1, $2)
+       VALUES (gen_random_uuid(), now(), 'system', 'test', 'test.event', 'job', 'x', '{}', $1, $2)
        RETURNING id`,
     ['0'.repeat(64), HASH],
   );
@@ -171,6 +171,16 @@ describe('unique constraints that make retries safe', () => {
     await expect(insertClosed()).resolves.toBeDefined();
   });
 
+  it('refuses a second active run of the same stage for one Initiative', async () => {
+    await expect(
+      db.pool.query(
+        `INSERT INTO stage_runs (initiative_id, stage_key, attempt, state, config_version)
+         VALUES ($1, 'brief', 2, 'active', $2)`,
+        [ids.initiative, HASH],
+      ),
+    ).rejects.toThrow(/duplicate key/);
+  });
+
   it('refuses a duplicate job idempotency key', async () => {
     const insertJob = () =>
       db.pool.query(
@@ -184,6 +194,22 @@ describe('unique constraints that make retries safe', () => {
 
 describe('CHECK constraints on enum-like columns', () => {
   it.each([
+    [
+      'an unknown audit entity type',
+      `INSERT INTO audit_events (id, occurred_at, actor_type, actor_id, action, entity_type,
+         entity_id, data, prev_hash, hash)
+       VALUES (gen_random_uuid(), now(), 'system', 's', 'a', 'widget', 'x', '{}', '${HASH}', '${'c'.repeat(64)}')`,
+    ],
+    [
+      'an unknown external link entity type',
+      `INSERT INTO external_links (entity_type, entity_id, system, external_id, url)
+       VALUES ('widget', gen_random_uuid(), 'jira', 'J-1', 'https://example.invalid/J-1')`,
+    ],
+    [
+      'an answered question without an answer time',
+      `INSERT INTO open_questions (version_id, text, blocking, status, answer, answered_by_id)
+       VALUES (gen_random_uuid(), 'q', true, 'answered', 'a', 'u')`,
+    ],
     [
       'an unknown initiative status',
       `INSERT INTO initiatives (title, requester_id, owner_id, status, current_stage_key)
@@ -244,11 +270,37 @@ describe('audit chain head', () => {
     expect(row).toEqual({ last_hash: '0'.repeat(64), last_seq: '0' });
   });
 
+  it.each(['DELETE FROM audit_chain_head', 'TRUNCATE audit_chain_head'])(
+    'cannot be removed: %s',
+    async (sql) => {
+      await expect(db.pool.query(sql)).rejects.toThrow(
+        'rows of audit_chain_head cannot be removed',
+      );
+    },
+  );
+
   it('holds exactly one row', async () => {
     await expect(
       db.pool.query(
         "INSERT INTO audit_chain_head (id, last_seq, last_hash) VALUES (false, 0, 'x')",
       ),
     ).rejects.toThrow();
+  });
+});
+
+describe('indexes for the workflow queries', () => {
+  it.each([
+    'gate_runs_package_idx',
+    'gate_runs_step_run_idx',
+    'review_packages_stage_run_idx',
+    'artifacts_initiative_idx',
+    'jobs_leased_idx',
+  ])('has %s', async (name) => {
+    const row = await one(
+      'SELECT 1 AS found FROM pg_indexes WHERE schemaname = $1 AND indexname = $2',
+      [db.schema, name],
+    );
+
+    expect(row).toEqual({ found: 1 });
   });
 });
