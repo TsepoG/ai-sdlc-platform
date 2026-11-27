@@ -9,6 +9,7 @@ import { envSchema } from './schema.js';
  * @property {'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'silent'} logLevel Minimum log level.
  * @property {string} appVersion Version reported by /health.
  * @property {'local' | 'platform-dev' | 'platform-prod'} platformEnv Platform environment this process runs in.
+ * @property {string} stagesDir Directory holding the stage configuration files.
  */
 
 /**
@@ -35,5 +36,6 @@ export function loadConfig(source = process.env) {
     logLevel: env.LOG_LEVEL,
     appVersion: env.APP_VERSION,
     platformEnv: env.PLATFORM_ENV,
+    stagesDir: env.STAGES_DIR,
   });
 }

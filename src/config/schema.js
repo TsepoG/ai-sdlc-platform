@@ -17,6 +17,8 @@ export const LOG_LEVELS = /** @type {const} */ ([
 ]);
 
 const DEFAULT_PORT = 8080;
+/** Stage configuration directory, relative to the working directory (the repo root or /app). */
+const DEFAULT_STAGES_DIR = 'config/stages';
 const MIN_PORT = 1;
 const MAX_PORT = 65535;
 
@@ -27,4 +29,5 @@ export const envSchema = z.object({
   LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
   APP_VERSION: z.string().min(1),
   PLATFORM_ENV: z.enum(PLATFORM_ENVS),
+  STAGES_DIR: z.string().min(1).default(DEFAULT_STAGES_DIR),
 });

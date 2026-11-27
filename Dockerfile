@@ -20,6 +20,8 @@ ENV NODE_ENV=production \
 COPY --from=deps --chown=node:node /app/node_modules ./node_modules
 COPY --chown=node:node package.json ./
 COPY --chown=node:node src ./src
+# Stage and routing configuration; the server validates it at startup and refuses to run without it.
+COPY --chown=node:node config ./config
 USER node
 EXPOSE 8080
 # The slim image has no curl, so probe with Node's built-in fetch.

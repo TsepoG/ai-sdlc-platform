@@ -3,6 +3,7 @@ import { fastify, LogController } from 'fastify';
 import { errorHandler, notFoundHandler } from './error-handler.js';
 import { generateRequestId, REQUEST_ID_HEADER, REQUEST_ID_LOG_LABEL } from './request-id.js';
 import { healthRoutes } from './routes/health.js';
+import { stagesRoutes } from './routes/stages.js';
 
 /**
  * @typedef {import('fastify').FastifyInstance<
@@ -15,11 +16,13 @@ import { healthRoutes } from './routes/health.js';
 
 /**
  * Build the Fastify app. Does not listen; the caller decides how to serve it.
- * @param {{ config: import('../config/index.js').Config, logger: import('pino').Logger }} deps
- *   Validated configuration and the shared logger.
+ * @param {object} deps Dependencies.
+ * @param {import('../config/index.js').Config} deps.config Validated configuration.
+ * @param {import('pino').Logger} deps.logger Shared logger.
+ * @param {ReadonlyArray<import('../stages/index.js').StageDefinition>} deps.stages Validated stages.
  * @returns {AppServer} Configured Fastify instance.
  */
-export function buildServer({ config, logger }) {
+export function buildServer({ config, logger, stages }) {
   const app = fastify({
     loggerInstance: logger,
     genReqId: generateRequestId,
@@ -31,5 +34,6 @@ export function buildServer({ config, logger }) {
   app.setErrorHandler(errorHandler);
   app.setNotFoundHandler(notFoundHandler);
   app.register(healthRoutes, { version: config.appVersion });
+  app.register(stagesRoutes, { stages });
   return app;
 }

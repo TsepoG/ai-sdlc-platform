@@ -103,6 +103,17 @@ jobs:
           docker logs platform
           exit 1
 
+      - name: Check /stages serves the stage configuration
+        run: |
+          body="$(curl -fsS --max-time 5 http://localhost:8080/stages)"
+          count="$(echo "${body}" | jq '.stages | length')"
+          if [ "${count}" != "7" ]; then
+            echo "::error::/stages returned ${count} stages, expected 7"
+            docker logs platform
+            exit 1
+          fi
+          echo "Stages: $(echo "${body}" | jq -c '[.stages[].key]')"
+
       - name: Stop container
         if: always()
         run: docker rm -f platform

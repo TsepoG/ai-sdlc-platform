@@ -21,7 +21,12 @@ describe('loadConfig', () => {
       logLevel: 'debug',
       appVersion: 'abc123',
       platformEnv: 'local',
+      stagesDir: 'config/stages',
     });
+  });
+
+  it('reads the stages directory from STAGES_DIR', () => {
+    expect(loadConfig({ ...validEnv, STAGES_DIR: '/srv/stages' }).stagesDir).toBe('/srv/stages');
   });
 
   it('applies defaults for PORT and LOG_LEVEL', () => {
@@ -56,6 +61,7 @@ describe('loadConfig', () => {
     ['LOG_LEVEL', 'loud'],
     ['PLATFORM_ENV', 'prod'],
     ['APP_VERSION', ''],
+    ['STAGES_DIR', ''],
   ])('throws ConfigError for invalid %s=%s', (key, value) => {
     expect(() => loadConfig({ ...validEnv, [key]: value })).toThrow(ConfigError);
   });

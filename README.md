@@ -4,7 +4,7 @@ An internal **AI-assisted SDLC platform**. For each Initiative (a feature or cha
 
 Seven stages: **Brief → UX design → Tech design → Work breakdown → Build → Deploy → Test**. Jira, Confluence, Figma and GitHub stay the systems of record. The platform runs on AWS and the AI layer is vendor-neutral.
 
-**Status:** Phase 00 (repository foundation). The repo contains the tooling, shared foundations (config, errors, logger), a Fastify `GET /health` API, a container image, AWS CDK stacks and the CI/CD workflows. No stage logic exists yet; see [docs/phases/ROADMAP.md](docs/phases/ROADMAP.md).
+**Status:** Phase 01 (core rules). On top of the Phase 00 foundation (tooling, config, errors, logger, a Fastify API, a container image, AWS CDK stacks and CI/CD), the repo now has the seven stages as validated configuration, the pure workflow rules (step sequencing, content and package hashing, decision rights), the vendor-neutral AI contracts with routing and a stub provider, and a read-only `GET /stages`. There is no persistence yet; see [docs/phases/ROADMAP.md](docs/phases/ROADMAP.md).
 
 ## Documents
 
@@ -31,19 +31,40 @@ npm start                # loads .env if present, listens on PORT
 curl localhost:8080/health
 ```
 
-`GET /health` returns `{ "status": "ok", "version": "<APP_VERSION>" }`.
+`GET /health` returns `{ "status": "ok", "version": "<APP_VERSION>" }`. `GET /stages` returns the loaded stage configuration: `{ "stages": [{ "key", "name", "order", "enabled", "steps": [{ "key", "type", "condition" }] }] }`.
 
 ## Configuration
 
 `src/config` is the only code that reads the environment, and it validates everything with Zod at startup. Missing or invalid values stop the process with a `ConfigError` that names the variable (never its value). `.env.example` lists every variable.
 
-| Variable       | Values                                   | Default | Notes                                         |
-| -------------- | ---------------------------------------- | ------- | --------------------------------------------- |
-| `NODE_ENV`     | `development`, `test`, `production`      | none    | required                                      |
-| `PORT`         | 1-65535                                  | `8080`  |                                               |
-| `LOG_LEVEL`    | `fatal` … `trace`, `silent`              | `info`  |                                               |
-| `APP_VERSION`  | any non-empty string                     | none    | reported by `/health`; CI sets the commit SHA |
-| `PLATFORM_ENV` | `local`, `platform-dev`, `platform-prod` | none    | required                                      |
+| Variable       | Values                                   | Default         | Notes                                              |
+| -------------- | ---------------------------------------- | --------------- | -------------------------------------------------- |
+| `NODE_ENV`     | `development`, `test`, `production`      | none            | required                                           |
+| `PORT`         | 1-65535                                  | `8080`          |                                                    |
+| `LOG_LEVEL`    | `fatal` … `trace`, `silent`              | `info`          |                                                    |
+| `APP_VERSION`  | any non-empty string                     | none            | reported by `/health`; CI sets the commit SHA      |
+| `PLATFORM_ENV` | `local`, `platform-dev`, `platform-prod` | none            | required                                           |
+| `STAGES_DIR`   | a directory path                         | `config/stages` | relative to the working directory; read at startup |
+
+## Stage configuration
+
+Each stage is one YAML file in `config/stages/`, named `NN-<key>.yaml` (`01-brief.yaml` … `07-test.yaml`). A file sets the stage's `key`, `name`, `order`, `enabled`, `requiredInputs`, `outputs`, `agent`, ordered `steps` and `reworkTargets`. Only `brief` is enabled in the MVP. The engine in `src/workflow` never branches on a stage key, so changing a stage means editing its file (and later its templates and agent), not the engine. Why YAML in the repo: [ADR 0003](docs/decisions/0003-stage-config-as-yaml.md).
+
+Steps are one of three types, and unknown keys are rejected:
+
+| Type     | Fields                                                                                                      |
+| -------- | ----------------------------------------------------------------------------------------------------------- |
+| `work`   | `key`, optional `assigneeRole`, `agentDrafts`, `output` (must be one of the stage's `outputs`), `condition` |
+| `action` | `key`, `action: { workflow: <file>.yml, environment: <slug> }`, optional `condition`                        |
+| `gate`   | `key`, `approverRole`, optional `slaHours` (positive integer), `condition`                                  |
+
+`condition` makes a step optional. The only form is `initiative.flags.<name>` (for example `initiative.flags.requiresPreprod`); the step runs only when that flag is `true`. Anything else is rejected when the file loads.
+
+**Validation rules.** Per file: keys are lowercase slugs; step keys are unique; `order` is a positive integer; `outputs` is not empty; there is at least one gate; the last step is a gate, and so is the last unconditional step, so a stage always ends in an approval. Across files: `order` and `key` are unique; every `requiredInputs[].fromStage` is an earlier stage that lists that input's `type` in its `outputs`; every `reworkTargets` entry is an earlier stage. Errors name the file and the path, and list every problem at once.
+
+**Transitions.** `nextMove` in `src/workflow` decides where a stage goes after a step outcome. `done` moves to the next planned step, or approves the stage after the last. `changes_requested` at a gate restarts at the first planned step. `rejected` at a gate cancels the Initiative, or reworks to a stage in `reworkTargets` when a target is given. A failed action pauses. A failed agent-drafted work step pauses. Any other failed work step (people or tests) reworks to the first `reworkTargets` entry, or pauses if there is none. Every other combination throws `InvalidTransitionError`.
+
+**Checking a change.** The server loads and validates the stages at startup and refuses to start on invalid configuration, and `npm test` loads the real files (`test/stages/real-config.test.js`). Run `npm run verify` before opening a PR. AI routing lives alongside in `config/routing.yaml` (every stage on the offline `stub` provider until Phase 03).
 
 ## Scripts
 
@@ -67,10 +88,16 @@ CDK commands run from `infra/`: `cd infra && npx cdk synth`. Synth needs no AWS 
 ```
 src/
   config/    environment loading and validation (only place reading process.env)
-  errors/    AppError, ConfigError
+  errors/    AppError and its subclasses (config, stage config, routing, transitions, packages, duties)
   logger/    structured JSON logger (pino)
-  server/    Fastify app factory, /health, error handling, main.js entry point
-test/        mirrors src/, plus test/infra and test/lint (lint-boundary tests)
+  server/    Fastify app factory, /health, /stages, error handling, main.js entry point
+  stages/    stage configuration loading and validation
+  workflow/  pure rules: conditions, planned steps, nextMove, hashing, decision rights
+  ai/        vendor-neutral contracts, routing, stub provider (no vendor SDKs)
+config/
+  stages/    01-brief.yaml … 07-test.yaml
+  routing.yaml  provider and model per stage
+test/        mirrors src/, plus test/infra, test/lint (lint-boundary tests) and the provider contract suite
 infra/       AWS CDK (JavaScript): registry, platform and GitHub OIDC stacks
 .github/     ci.yml and deploy-platform.yml
 docs/        design, phases, decisions
@@ -84,6 +111,8 @@ ESLint enforces two rules from the coding principles, and tests prove they fire 
 
 - AI vendor SDKs (`@anthropic-ai/*`, `openai`, `@google/genai`, `@aws-sdk/client-bedrock*`, `@mistralai/*`, `cohere-ai`) can only be imported under `src/ai-adapters/<vendor>/`.
 - `process.env` (including `import { env } from 'node:process'`) can only be used in `src/config/`.
+
+`test/ai/vendor-neutral.test.js` also checks that `src/ai` imports no vendor SDK and never names a vendor.
 
 ## Container
 
@@ -138,7 +167,7 @@ To bring dev back (planned for Phase 02, about 7 Dec 2026): set the repository v
 
 ## CI
 
-`ci.yml` runs on pull requests and on pushes to `main`: format check, lint, typecheck, unit tests with the 90% coverage threshold (together the same as `npm run verify`), `npm run audit`, `cdk synth`, then the SonarQube scan. A second job builds the Docker image, starts it and checks `/health`. Add the repository secret `SONAR_TOKEN` and the repository variables `SONAR_ORGANIZATION` and `SONAR_PROJECT_KEY` to enable the scan (SonarQube Cloud needs no host URL); until all three are set, CI prints a notice and skips it. For self-hosted SonarQube Server, also pass a `SONAR_HOST_URL` secret to the scan step and drop the organization argument.
+`ci.yml` runs on pull requests and on pushes to `main`: format check, lint, typecheck, unit tests with the 90% coverage threshold (together the same as `npm run verify`), `npm run audit`, `cdk synth`, then the SonarQube scan. A second job builds the Docker image, starts it and checks `/health` and that `/stages` lists the seven stages. Add the repository secret `SONAR_TOKEN` and the repository variables `SONAR_ORGANIZATION` and `SONAR_PROJECT_KEY` to enable the scan (SonarQube Cloud needs no host URL); until all three are set, CI prints a notice and skips it. For self-hosted SonarQube Server, also pass a `SONAR_HOST_URL` secret to the scan step and drop the organization argument.
 
 ## Placeholders to fill in
 
@@ -149,4 +178,4 @@ To bring dev back (planned for Phase 02, about 7 Dec 2026): set the repository v
 
 ## Working with Claude Code
 
-Claude Code never commits, pushes, merges, rebases, resets or tags; `.claude/settings.json` denies those commands and clears AI attribution. See [CLAUDE.md](CLAUDE.md).
+Claude Code never merges, rebases, resets or tags, and never pushes to `main` or force-pushes; `.claude/settings.json` denies those commands and clears AI attribution. In interactive sessions the owner makes every commit and push. Unattended cloud sessions may commit to the phase branch, push it and open a draft PR, with every commit authored by the owner (CODING_PRINCIPLES.md section 8). See [CLAUDE.md](CLAUDE.md).
