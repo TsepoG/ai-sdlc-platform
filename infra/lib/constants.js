@@ -26,17 +26,22 @@ export const DEPLOY_BRANCH = 'main';
 /** Default CDK bootstrap qualifier; the deploy role may assume roles that carry it. */
 export const CDK_BOOTSTRAP_QUALIFIER = 'hnb659fds';
 
+/** Readiness path: checks the database. The ALB keeps probing /health (liveness). */
+export const READY_PATH = '/ready';
+
 /**
  * @typedef {object} EnvSettings
  * @property {number} natGateways NAT gateways in the VPC (cost vs. availability).
  * @property {boolean} containerInsights Whether ECS Container Insights is on.
  * @property {number} desiredCount Fargate tasks to run.
+ * @property {boolean} protectData Prod-only protections: multi-AZ database, deletion
+ *   protection, snapshot on delete, and a retained artifact bucket.
  */
 
 /** Per-environment sizing, keyed by platform environment name. */
 export const ENV_SETTINGS = /** @type {const} */ ({
-  'platform-dev': { natGateways: 1, containerInsights: false, desiredCount: 1 },
-  'platform-prod': { natGateways: 2, containerInsights: true, desiredCount: 2 },
+  'platform-dev': { natGateways: 1, containerInsights: false, desiredCount: 1, protectData: false },
+  'platform-prod': { natGateways: 2, containerInsights: true, desiredCount: 2, protectData: true },
 });
 
 /** Platform environments the stacks can be synthesised for. */
