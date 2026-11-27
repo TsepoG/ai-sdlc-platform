@@ -92,9 +92,10 @@ result in **one transaction** with its audit event(s):
   open question is unanswered; supersedes any open package; completes the
   drafting work step; opens the first gate (gate run with `dueAt` from
   `slaHours`).
-- `decide(gateRunId, { outcome, packageHash, reworkTarget, feedback }, actor,
-  roles)` — `assertCurrentPackage` (409 on stale), `assertCanDecide`
-  (403), then maps the decision to a Phase 01 outcome and applies `nextMove`:
+- `decide(gateRunId, decision, actor, roles)`, where `decision` is
+  `{ outcome, packageHash, reworkTarget, feedback }` —
+  `assertCurrentPackage` (409 on stale), `assertCanDecide` (403), then
+  maps the decision to a Phase 01 outcome and applies `nextMove`:
   - approve → next step, or stage approved;
   - request changes → package closed, steps restart at the first;
   - reject with target → new stage-run attempt at the target; later stage
