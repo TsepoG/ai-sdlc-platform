@@ -35,6 +35,31 @@ afterEach(async () => {
 });
 
 /**
+ * Wait a real number of milliseconds.
+ * @param {number} ms Milliseconds.
+ * @returns {Promise<void>}
+ */
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Poll until a condition holds, failing the test after a generous limit rather than hanging.
+ * @param {() => Promise<boolean>} condition Condition to wait for.
+ * @returns {Promise<void>}
+ * @throws {Error} When the condition doesn't hold within 5 seconds.
+ */
+async function waitFor(condition) {
+  for (let elapsed = 0; elapsed < 5000; elapsed += 10) {
+    if (await condition()) {
+      return;
+    }
+    await sleep(10);
+  }
+  throw new Error('Condition not met within 5 seconds');
+}
+
+/**
  * Move the test clock forward.
  * @param {number} ms Milliseconds.
  * @returns {void}
@@ -160,8 +185,30 @@ describe('createJobWorker.runOnce', () => {
     expect(outcomes).toEqual(['retry', 'retry', 'retry', 'retry', 'failed']);
     expect(await job()).toMatchObject({ status: 'failed', attempts: 5, last_error: 'down' });
     expect(await failing.runOnce()).toBe('idle');
-    const actions = (await listAuditEvents(db.pool)).map((event) => event.action);
-    expect(actions).toEqual(['job.failed']);
+    const events = await listAuditEvents(db.pool);
+    expect(events.map((event) => event.action)).toEqual([
+      'job.retry_scheduled',
+      'job.retry_scheduled',
+      'job.retry_scheduled',
+      'job.retry_scheduled',
+      'job.failed',
+    ]);
+    expect(events.at(-1)?.data).toEqual({ type: 'test', attempts: 5, reason: 'handler_error' });
+  });
+
+  it('never writes the handler error message into the audit trail', async () => {
+    await enqueue();
+    const leaky = worker({
+      test: async () => {
+        throw new Error('token=secret-value');
+      },
+    });
+
+    await leaky.runOnce();
+
+    const events = await listAuditEvents(db.pool);
+    expect(JSON.stringify(events)).not.toContain('secret-value');
+    expect((await job()).last_error).toBe('token=secret-value');
   });
 
   it('fails a job whose type has no handler', async () => {
@@ -189,7 +236,7 @@ describe('createJobWorker.runOnce', () => {
       },
     };
     const first = worker(handlers).runOnce();
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await waitFor(async () => (await job()).status === 'running');
 
     const second = await worker(handlers, { pool: db.newPool() }).runOnce();
     release();
@@ -197,6 +244,72 @@ describe('createJobWorker.runOnce', () => {
     expect(second).toBe('idle');
     expect(await first).toBe('done');
     expect(calls).toBe(1);
+  });
+
+  it('skips a job another transaction holds locked instead of waiting for it', async () => {
+    await enqueue();
+    const holder = await db.newPool().connect();
+    await holder.query('BEGIN');
+    await holder.query('SELECT id FROM jobs FOR UPDATE');
+    try {
+      const outcome = await worker(
+        { test: async () => undefined },
+        { pool: db.newPool() },
+      ).runOnce();
+
+      expect(outcome).toBe('idle');
+    } finally {
+      await holder.query('ROLLBACK');
+      holder.release();
+    }
+  });
+
+  it('fails a job whose last attempt died, instead of reclaiming it forever', async () => {
+    await enqueue();
+    await db.pool.query(`UPDATE jobs SET status = 'running', attempts = 5, locked_at = $1`, [
+      clock,
+    ]);
+    advance(settings.leaseMs + 1);
+
+    expect(await worker({ test: async () => undefined }).runOnce()).toBe('idle');
+
+    expect(await job()).toMatchObject({ status: 'failed', attempts: 5 });
+    const [event] = await listAuditEvents(db.pool);
+    expect(event).toMatchObject({ action: 'job.failed', data: { reason: 'lease_expired' } });
+  });
+
+  it('renews the lease while a slow handler runs, so no other worker takes the job', async () => {
+    // These workers run on the real clock, so queue the job at real time.
+    clock = new Date();
+    await enqueue();
+    const shortLease = { ...settings, leaseMs: 300 };
+    /** @type {() => void} */
+    let release = () => undefined;
+    const gate = new Promise((resolve) => {
+      release = () => resolve(undefined);
+    });
+    const slow = createJobWorker({
+      pool: db.pool,
+      handlers: { test: async () => gate },
+      settings: shortLease,
+      logger: quietLogger,
+    });
+    const other = createJobWorker({
+      pool: db.newPool(),
+      handlers: { test: async () => undefined },
+      settings: shortLease,
+      logger: quietLogger,
+    });
+
+    const running = slow.runOnce();
+    await waitFor(async () => (await job()).status === 'running');
+    await sleep(shortLease.leaseMs * 2);
+    const stolen = await other.runOnce();
+    release();
+
+    expect(stolen).toBe('idle');
+    expect(await running).toBe('done');
+    expect(await job()).toMatchObject({ status: 'done', attempts: 1 });
   });
 
   it('reclaims a job whose worker died after its lease expired', async () => {
@@ -219,9 +332,7 @@ describe('createJobWorker.start and stop', () => {
     const running = worker({ test: async () => undefined });
 
     running.start();
-    for (let wait = 0; wait < 100 && (await job()).status !== 'done'; wait += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
+    await waitFor(async () => (await job()).status === 'done');
     await running.stop();
 
     expect((await job()).status).toBe('done');
@@ -246,10 +357,10 @@ describe('createJobWorker.start and stop', () => {
     );
 
     running.start();
-    await new Promise((resolve) => setTimeout(resolve, 40));
+    await waitFor(async () => errors.length >= 2);
     await running.stop();
 
-    expect(errors.length).toBeGreaterThan(1);
+    expect(errors.length).toBeGreaterThanOrEqual(2);
   });
 
   it('can be stopped before it was started', async () => {
