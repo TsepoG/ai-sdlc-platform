@@ -94,21 +94,42 @@ jobs:
           -c "platformEnv=${PLATFORM_ENV}" -c "imageTag=${COMMIT_SHA}"
           --require-approval never --outputs-file cdk-outputs.json
 
-      - name: Smoke test /health
+      - name: Smoke test /health, /ready, /stages and the workflow routes
         run: |
           url="$(jq -r --arg stack "ai-sdlc-platform-${PLATFORM_ENV}" '.[$stack].ServiceUrl' infra/cdk-outputs.json)"
           if [ -z "${url}" ] || [ "${url}" = "null" ]; then
             echo "::error::ServiceUrl output not found"
             exit 1
           fi
+          healthy=false
           for attempt in $(seq 1 30); do
             body="$(curl -fsS --max-time 10 "${url}/health" || true)"
             if [ "$(echo "${body}" | jq -r '.status + " " + .version' 2>/dev/null)" = "ok ${COMMIT_SHA}" ]; then
               echo "Healthy: ${body}"
-              exit 0
+              healthy=true
+              break
             fi
             echo "Attempt ${attempt}: not ready (${body:-no response})"
             sleep 10
           done
-          echo "::error::${url}/health did not report ok for ${COMMIT_SHA}"
-          exit 1
+          if [ "${healthy}" != "true" ]; then
+            echo "::error::${url}/health did not report ok for ${COMMIT_SHA}"
+            exit 1
+          fi
+          ready="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "${url}/ready")"
+          if [ "${ready}" != "200" ]; then
+            echo "::error::${url}/ready returned ${ready}; the service cannot reach its database"
+            exit 1
+          fi
+          stages="$(curl -fsS --max-time 10 "${url}/stages" | jq '.stages | length')"
+          if [ "${stages}" != "7" ]; then
+            echo "::error::${url}/stages returned ${stages} stages, expected 7"
+            exit 1
+          fi
+          # The workflow API has no SSO yet, so it must not exist on the public load balancer.
+          workflow="$(curl -sS -o /dev/null -w '%{http_code}' -X POST --max-time 10 "${url}/initiatives")"
+          if [ "${workflow}" != "404" ]; then
+            echo "::error::POST ${url}/initiatives returned ${workflow}, expected 404"
+            exit 1
+          fi
+          echo "Ready, 7 stages, workflow routes off.

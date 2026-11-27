@@ -16,7 +16,22 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Database tests run against a real PostgreSQL (same major version as RDS) and count toward
+    # coverage. Each test file creates and drops its own schema.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: platform
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U platform -d platform"
+          --health-interval 5s --health-timeout 3s --health-retries 10
     env:
+      TEST_DATABASE_URL: postgres://platform:ci-only-password@localhost:5432/platform
       # Empty on fork PRs and until the owner adds them; the Sonar steps check before running.
       # SonarQube Cloud needs no host URL. For self-hosted SonarQube Server, also add a
       # SONAR_HOST_URL secret here and drop the organization argument below.
@@ -77,6 +92,18 @@ jobs:
   container:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: platform
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U platform -d platform"
+          --health-interval 5s --health-timeout 3s --health-retries 10
     env:
       COMMIT_SHA: ${{ github.sha }}
     steps:
@@ -90,7 +117,12 @@ jobs:
 
       - name: Start container and check /health
         run: |
-          docker run -d --name platform -p 8080:8080 -e PLATFORM_ENV=local ai-sdlc-platform:ci
+          # Host networking so the container reaches the PostgreSQL service on localhost.
+          docker run -d --name platform --network host \
+            -e PLATFORM_ENV=local \
+            -e DATABASE_HOST=127.0.0.1 -e DATABASE_NAME=platform -e DATABASE_USER=platform \
+            -e DATABASE_PASSWORD=ci-only-password -e DATABASE_SSL=false \
+            ai-sdlc-platform:ci
           for attempt in $(seq 1 15); do
             body="$(curl -fsS --max-time 5 http://localhost:8080/health || true)"
             if [ "$(echo "${body}" | jq -r '.status + " " + .version' 2>/dev/null)" = "ok ${COMMIT_SHA}" ]; then
@@ -102,6 +134,24 @@ jobs:
           done
           docker logs platform
           exit 1
+
+      - name: Check /ready reports the database reachable
+        run: |
+          status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:8080/ready)"
+          if [ "${status}" != "200" ]; then
+            echo "::error::/ready returned ${status}, expected 200"
+            docker logs platform
+            exit 1
+          fi
+          echo "Ready: $(curl -sS http://localhost:8080/ready)"
+
+      - name: Check the workflow routes are not registered
+        run: |
+          status="$(curl -sS -o /dev/null -w '%{http_code}' -X POST --max-time 5 http://localhost:8080/initiatives)"
+          if [ "${status}" != "404" ]; then
+            echo "::error::POST /initiatives returned ${status}, expected 404"
+            exit 1
+          fi
 
       - name: Check /stages serves the stage configuration
         run: |
