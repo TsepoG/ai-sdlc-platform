@@ -1,7 +1,14 @@
 // @ts-check
 export { AppError, ConfigError } from './app-error.js';
 export {
+  BlockingQuestionsError,
+  ContentIntegrityError,
+  FixedAppError,
+  GateNotOpenError,
   InvalidPackageError,
+  MigrationError,
+  NotFoundError,
+  ValidationError,
   InvalidTransitionError,
   NotAuthorisedError,
   RoutingError,
