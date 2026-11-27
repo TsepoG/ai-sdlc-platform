@@ -206,6 +206,53 @@ describe('verifyAuditChain', () => {
     });
   });
 
+  it('reports two events swapped into each other’s places', async () => {
+    await appendAll(['a', 'b', 'c']);
+    const [first, second] = await listAuditEvents(db.pool);
+    const swap = `UPDATE audit_events SET id = $2, occurred_at = $3, action = $4, data = $5,
+       prev_hash = $6, hash = $7 WHERE seq = $1`;
+    const values = (/** @type {import('../../src/audit/index.js').StoredAuditEvent} */ event) => [
+      event.id,
+      event.occurredAt,
+      event.action,
+      event.data,
+      event.prevHash,
+      event.hash,
+    ];
+    // Move the second row's unique values aside first, then exchange the two events.
+    await tamper('UPDATE audit_events SET id = gen_random_uuid(), hash = $2 WHERE seq = $1', [
+      second.seq,
+      'e'.repeat(64),
+    ]);
+    await tamper(swap, [first.seq, ...values(second)]);
+    await tamper(swap, [second.seq, ...values(first)]);
+
+    const result = await verifyAuditChain(db.pool);
+
+    expect(result).toMatchObject({
+      ok: false,
+      firstBreak: { seq: first.seq, reason: 'broken_link' },
+    });
+  });
+
+  it('verifies data that survives the jsonb round trip in a different shape', async () => {
+    await withTransaction(db.pool, (tx) =>
+      appendAuditEvent(
+        tx,
+        event('unicode', {
+          data: {
+            zeta: 1,
+            alpha: { nested: [3.5, -0, 1e21, 0.1 + 0.2] },
+            text: 'e\u0301 \u{1F600} \u00e9 "quoted" \\ back',
+            empty: {},
+          },
+        }),
+      ),
+    );
+
+    expect(await verifyAuditChain(db.pool)).toEqual({ ok: true, checked: 1 });
+  });
+
   it('reports a deleted event at the next link', async () => {
     await appendAll(['a', 'b', 'c']);
     const [, second, third] = await listAuditEvents(db.pool);
