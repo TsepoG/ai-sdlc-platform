@@ -3,7 +3,6 @@ import { chainHash, GENESIS_HASH } from './chain.js';
 import { SELECT_BATCH_AFTER, toStoredEvent } from './read.js';
 
 /** @import { AuditRow } from './read.js' */
-/** @import { Queryable } from '../db/index.js' */
 
 const DEFAULT_BATCH_SIZE = 500;
 
@@ -21,12 +20,36 @@ const DEFAULT_BATCH_SIZE = 500;
  */
 
 /**
- * Recompute the whole audit chain and report the first place it no longer verifies.
- * @param {Queryable} db Pool or transaction.
+ * Recompute the whole audit chain and report the first place it no longer verifies. It reads
+ * every event and the chain head from one REPEATABLE READ snapshot, so an append committing
+ * meanwhile can never look like tampering.
+ * @param {import('pg').Pool} pool Connection pool.
  * @param {{ batchSize?: number }} [options] Events read per query.
  * @returns {Promise<ChainVerification>} Whether the chain verifies, and how many events were checked.
+ * @throws {Error} When the database cannot be read.
  */
-export async function verifyAuditChain(db, { batchSize = DEFAULT_BATCH_SIZE } = {}) {
+export async function verifyAuditChain(pool, { batchSize = DEFAULT_BATCH_SIZE } = {}) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    const result = await verifySnapshot(client, batchSize);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Verify the chain inside an open snapshot.
+ * @param {import('pg').PoolClient} db Connection inside a REPEATABLE READ transaction.
+ * @param {number} batchSize Events read per query.
+ * @returns {Promise<ChainVerification>} The result.
+ */
+async function verifySnapshot(db, batchSize) {
   let expectedPrev = GENESIS_HASH;
   let lastSeq = '0';
   let checked = 0;

@@ -177,6 +177,22 @@ describe('verifyAuditChain', () => {
     expect(await verifyAuditChain(db.pool, { batchSize: 2 })).toEqual({ ok: true, checked: 5 });
   });
 
+  it('never reports a false break while appends are committing', async () => {
+    const other = db.newPool();
+    const appends = Array.from({ length: 30 }, (_, index) =>
+      withTransaction(other, (tx) => appendAuditEvent(tx, event(`concurrent${index}`))),
+    );
+    const verifications = Array.from({ length: 15 }, () =>
+      verifyAuditChain(db.pool, { batchSize: 3 }),
+    );
+
+    const results = await Promise.all(verifications);
+    await Promise.all(appends);
+
+    expect(results.every((result) => result.ok)).toBe(true);
+    expect(await verifyAuditChain(db.pool)).toEqual({ ok: true, checked: 30 });
+  });
+
   it('reports an edited event as the first break', async () => {
     await appendAll(['a', 'b', 'c']);
     const [, second] = await listAuditEvents(db.pool);
@@ -211,5 +227,14 @@ describe('verifyAuditChain', () => {
     const result = await verifyAuditChain(db.pool);
 
     expect(result).toMatchObject({ ok: false, firstBreak: { reason: 'head_mismatch' } });
+  });
+});
+
+describe('verifyAuditChain errors', () => {
+  it('rolls back and rethrows when the chain cannot be read', async () => {
+    await db.pool.query('DROP TABLE audit_chain_head');
+
+    await expect(verifyAuditChain(db.pool)).rejects.toThrow(/audit_chain_head/);
+    expect(db.pool.totalCount).toBe(db.pool.idleCount);
   });
 });
