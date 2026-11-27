@@ -1,0 +1,14 @@
+# Provider and model per stage, plus a default and a fallback (core-design.md section 7).
+# Model IDs are configuration, never source code. Write them as "${NAME}", quoted because braces
+# are YAML syntax; the caller supplies the value from the environment through src/config.
+# Every stage uses the offline stub until Phase 03 adds the first real adapter.
+default: { provider: stub, model: stub-model }
+fallback: { provider: stub, model: stub-model }
+stages:
+  brief: { provider: stub, model: stub-model }
+  ux-design: { provider: stub, model: stub-model }
+  tech-design: { provider: stub, model: stub-model }
+  work-breakdown: { provider: stub, model: stub-model }
+  build: { provider: stub, model: stub-model }
+  deploy: { provider: stub, model: stub-model }
+  test: { provider: stub, model: stub-model }

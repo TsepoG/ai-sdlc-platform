@@ -1,0 +1,13 @@
+key: ux-design
+name: UX design
+order: 2
+enabled: false
+requiredInputs:
+  - { type: epics, fromStage: brief }
+  - { type: user-journeys, fromStage: brief }
+outputs: [validated-epic, figma-designs, ui-prototype, bff-mock, prototype-pr]
+agent: ux-design-agent
+steps:
+  - { key: draft-designs, type: work, agentDrafts: true, assigneeRole: contributor }
+  - { key: validate-epic, type: gate, approverRole: ux-lead, slaHours: 48 }
+reworkTargets: [brief]
