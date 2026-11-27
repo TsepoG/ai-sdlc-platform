@@ -3,13 +3,36 @@ import { describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../../src/config/index.js';
 import { ConfigError } from '../../src/errors/index.js';
 
+/** Synthetic values only; the password is a test placeholder. */
 const validEnv = {
   NODE_ENV: 'test',
   PORT: '3000',
   LOG_LEVEL: 'debug',
   APP_VERSION: 'abc123',
   PLATFORM_ENV: 'local',
+  DATABASE_HOST: 'db.internal',
+  DATABASE_PORT: '5433',
+  DATABASE_NAME: 'platform',
+  DATABASE_USER: 'platform_app',
+  DATABASE_PASSWORD: 'test-password-placeholder',
 };
+
+/**
+ * Load config and return the thrown ConfigError.
+ * @param {Record<string, string | undefined>} env Environment to load.
+ * @returns {ConfigError} The error.
+ */
+function configErrorFor(env) {
+  /** @type {unknown} */
+  let caught;
+  try {
+    loadConfig(env);
+  } catch (error) {
+    caught = error;
+  }
+  expect(caught).toBeInstanceOf(ConfigError);
+  return /** @type {ConfigError} */ (caught);
+}
 
 describe('loadConfig', () => {
   it('returns typed configuration for a valid environment', () => {
@@ -22,35 +45,64 @@ describe('loadConfig', () => {
       appVersion: 'abc123',
       platformEnv: 'local',
       stagesDir: 'config/stages',
+      database: {
+        host: 'db.internal',
+        port: 5433,
+        name: 'platform',
+        user: 'platform_app',
+        password: 'test-password-placeholder',
+        ssl: true,
+        poolMax: 10,
+      },
+      content: { type: 'local', dir: 'data/content', bucket: undefined },
+      workflowApiEnabled: false,
+      authMode: 'none',
+      worker: {
+        enabled: true,
+        pollIntervalMs: 1000,
+        backoffBaseMs: 5000,
+        maxAttempts: 5,
+        leaseMs: 300000,
+      },
     });
+  });
+
+  it('applies defaults for PORT and LOG_LEVEL', () => {
+    const config = loadConfig({ ...validEnv, PORT: undefined, LOG_LEVEL: undefined });
+
+    expect(config.port).toBe(8080);
+    expect(config.logLevel).toBe('info');
+  });
+
+  it('defaults the database port to 5432', () => {
+    expect(loadConfig({ ...validEnv, DATABASE_PORT: undefined }).database.port).toBe(5432);
   });
 
   it('reads the stages directory from STAGES_DIR', () => {
     expect(loadConfig({ ...validEnv, STAGES_DIR: '/srv/stages' }).stagesDir).toBe('/srv/stages');
   });
 
-  it('applies defaults for PORT and LOG_LEVEL', () => {
-    const { NODE_ENV, APP_VERSION, PLATFORM_ENV } = validEnv;
+  it('returns a deeply frozen object', () => {
+    const config = loadConfig(validEnv);
 
-    const config = loadConfig({ NODE_ENV, APP_VERSION, PLATFORM_ENV });
-
-    expect(config.port).toBe(8080);
-    expect(config.logLevel).toBe('info');
+    expect(Object.isFrozen(config)).toBe(true);
+    expect(Object.isFrozen(config.database)).toBe(true);
+    expect(Object.isFrozen(config.worker)).toBe(true);
   });
 
-  it('returns a frozen object', () => {
-    expect(Object.isFrozen(loadConfig(validEnv))).toBe(true);
+  it.each([
+    'NODE_ENV',
+    'APP_VERSION',
+    'PLATFORM_ENV',
+    'DATABASE_HOST',
+    'DATABASE_NAME',
+    'DATABASE_USER',
+    'DATABASE_PASSWORD',
+  ])('throws ConfigError naming %s when it is missing', (key) => {
+    const env = { ...validEnv, [key]: undefined };
+
+    expect(configErrorFor(env).message).toContain(key);
   });
-
-  it.each(['NODE_ENV', 'APP_VERSION', 'PLATFORM_ENV'])(
-    'throws ConfigError naming %s when it is missing',
-    (key) => {
-      const env = { ...validEnv, [key]: undefined };
-
-      expect(() => loadConfig(env)).toThrow(ConfigError);
-      expect(() => loadConfig(env)).toThrow(key);
-    },
-  );
 
   it.each([
     ['PORT', 'abc'],
@@ -62,24 +114,113 @@ describe('loadConfig', () => {
     ['PLATFORM_ENV', 'prod'],
     ['APP_VERSION', ''],
     ['STAGES_DIR', ''],
+    ['DATABASE_PORT', 'x'],
+    ['DATABASE_SSL', 'maybe'],
+    ['DATABASE_POOL_MAX', '0'],
+    ['CONTENT_STORE', 'ftp'],
+    ['WORKFLOW_API_ENABLED', 'yes'],
+    ['AUTH_MODE', 'basic'],
+    ['WORKER_ENABLED', '1'],
+    ['WORKER_POLL_INTERVAL_MS', '-1'],
+    ['WORKER_MAX_ATTEMPTS', '0'],
   ])('throws ConfigError for invalid %s=%s', (key, value) => {
-    expect(() => loadConfig({ ...validEnv, [key]: value })).toThrow(ConfigError);
+    expect(configErrorFor({ ...validEnv, [key]: value }).message).toContain(key);
   });
 
-  it('attaches the validation failure as cause and does not echo values', () => {
-    /** @type {unknown} */
-    let caught;
-    try {
-      loadConfig({ ...validEnv, PORT: 'super-secret-value' });
-    } catch (error) {
-      caught = error;
-    }
+  it('never echoes a value, including the database password', () => {
+    const error = configErrorFor({ ...validEnv, PORT: 'super-secret-value', DATABASE_HOST: '' });
 
-    expect(caught).toBeInstanceOf(ConfigError);
-    const configError = /** @type {ConfigError} */ (caught);
-    expect(configError.cause).toBeDefined();
-    expect(configError.message).toContain('PORT');
-    expect(configError.message).not.toContain('super-secret-value');
+    expect(error.cause).toBeDefined();
+    expect(error.message).toContain('PORT');
+    expect(error.message).not.toContain('super-secret-value');
+    expect(error.message).not.toContain(validEnv.DATABASE_PASSWORD);
+  });
+
+  it('turns database TLS off only when DATABASE_SSL is false', () => {
+    expect(loadConfig({ ...validEnv, DATABASE_SSL: 'false' }).database.ssl).toBe(false);
+    expect(loadConfig({ ...validEnv, DATABASE_SSL: 'true' }).database.ssl).toBe(true);
+  });
+
+  describe('content store', () => {
+    it('uses the S3 bucket when CONTENT_STORE is s3', () => {
+      const config = loadConfig({ ...validEnv, CONTENT_STORE: 's3', CONTENT_BUCKET: 'artifacts' });
+
+      expect(config.content).toEqual({ type: 's3', dir: 'data/content', bucket: 'artifacts' });
+    });
+
+    it('requires CONTENT_BUCKET when CONTENT_STORE is s3', () => {
+      expect(configErrorFor({ ...validEnv, CONTENT_STORE: 's3' }).message).toContain(
+        'CONTENT_BUCKET',
+      );
+    });
+
+    it('reads the local directory from CONTENT_DIR', () => {
+      expect(loadConfig({ ...validEnv, CONTENT_DIR: 'srv/content' }).content.dir).toBe(
+        'srv/content',
+      );
+    });
+  });
+
+  describe('workflow API and dev auth', () => {
+    it.each(['local', 'test'])('can be enabled when PLATFORM_ENV is %s', (platformEnv) => {
+      const config = loadConfig({
+        ...validEnv,
+        PLATFORM_ENV: platformEnv,
+        WORKFLOW_API_ENABLED: 'true',
+        AUTH_MODE: 'dev-headers',
+      });
+
+      expect(config.workflowApiEnabled).toBe(true);
+      expect(config.authMode).toBe('dev-headers');
+    });
+
+    it.each(['platform-dev', 'platform-prod'])(
+      'refuses WORKFLOW_API_ENABLED in %s',
+      (platformEnv) => {
+        const error = configErrorFor({
+          ...validEnv,
+          PLATFORM_ENV: platformEnv,
+          WORKFLOW_API_ENABLED: 'true',
+        });
+
+        expect(error.message).toContain('WORKFLOW_API_ENABLED');
+      },
+    );
+
+    it.each(['platform-dev', 'platform-prod'])('refuses dev-headers auth in %s', (platformEnv) => {
+      const error = configErrorFor({
+        ...validEnv,
+        PLATFORM_ENV: platformEnv,
+        AUTH_MODE: 'dev-headers',
+      });
+
+      expect(error.message).toContain('AUTH_MODE');
+    });
+
+    it('allows the defaults in a deployed environment', () => {
+      expect(loadConfig({ ...validEnv, PLATFORM_ENV: 'platform-prod' }).workflowApiEnabled).toBe(
+        false,
+      );
+    });
+  });
+
+  it('reads worker settings', () => {
+    const config = loadConfig({
+      ...validEnv,
+      WORKER_ENABLED: 'false',
+      WORKER_POLL_INTERVAL_MS: '50',
+      WORKER_BACKOFF_BASE_MS: '10',
+      WORKER_MAX_ATTEMPTS: '3',
+      WORKER_LEASE_MS: '1000',
+    });
+
+    expect(config.worker).toEqual({
+      enabled: false,
+      pollIntervalMs: 50,
+      backoffBaseMs: 10,
+      maxAttempts: 3,
+      leaseMs: 1000,
+    });
   });
 
   it('reads the process environment when no source is given', () => {

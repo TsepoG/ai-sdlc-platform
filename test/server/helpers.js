@@ -14,6 +14,25 @@ export const testConfig = {
   appVersion: '9.9.9-test',
   platformEnv: 'local',
   stagesDir: REAL_STAGES_DIR,
+  database: {
+    host: 'localhost',
+    port: 5432,
+    name: 'unused',
+    user: 'unused',
+    password: 'unused-placeholder',
+    ssl: false,
+    poolMax: 1,
+  },
+  content: { type: 'local', dir: 'unused', bucket: undefined },
+  workflowApiEnabled: false,
+  authMode: 'none',
+  worker: {
+    enabled: false,
+    pollIntervalMs: 1000,
+    backoffBaseMs: 1000,
+    maxAttempts: 5,
+    leaseMs: 60000,
+  },
 };
 
 /**
