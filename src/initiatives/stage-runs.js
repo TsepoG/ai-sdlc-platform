@@ -95,7 +95,7 @@ export async function startStageRun(tx, deps, actor, { initiative, stage, inputP
       [initiative.id, stageRunId, type, `${stage.name}: ${type}`],
     );
   }
-  await audit(
+  audit(
     tx,
     deps,
     actor,

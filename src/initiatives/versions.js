@@ -1,7 +1,6 @@
 // @ts-check
-import { withTransaction } from '../db/index.js';
 import { InvalidTransitionError, NotFoundError, ValidationError } from '../errors/index.js';
-import { audit, lockInitiative } from './context.js';
+import { audit, lockInitiative, workflowTransaction } from './context.js';
 
 /** @import { Actor, WorkflowDeps } from './context.js' */
 
@@ -41,7 +40,7 @@ export async function saveVersion(deps, artifactId, input, actor) {
   const artifact = await findArtifact(deps, artifactId);
   const stored = await deps.contentStore.put(input.content);
   const sourceVersionIds = input.sourceVersionIds ?? [];
-  return withTransaction(deps.pool, async (tx) => {
+  return workflowTransaction(deps, async (tx) => {
     await lockInitiative(tx, artifact.initiative_id);
     const { rows: runs } = await tx.query('SELECT state FROM stage_runs WHERE id = $1', [
       artifact.stage_run_id,
@@ -71,7 +70,7 @@ export async function saveVersion(deps, artifactId, input, actor) {
       ],
     );
     const version = toVersionView(rows[0]);
-    await audit(
+    audit(
       tx,
       deps,
       actor,

@@ -1,5 +1,4 @@
 // @ts-check
-import { withTransaction } from '../db/index.js';
 import {
   BlockingQuestionsError,
   InvalidPackageError,
@@ -7,10 +6,10 @@ import {
   NotFoundError,
 } from '../errors/index.js';
 import { nextMove, packageHash } from '../workflow/index.js';
-import { audit, lockInitiative } from './context.js';
+import { audit, lockInitiative, workflowTransaction } from './context.js';
 import { applyMove } from './moves.js';
 import { stageByKey } from './plan.js';
-import { currentCycleSteps, lockStageRun, startStep } from './stage-runs.js';
+import { currentCycleSteps, insertCycle, lockStageRun } from './stage-runs.js';
 
 /** @import { Actor, InitiativeRow, WorkflowDeps } from './context.js' */
 /** @import { StageRunRow } from './stage-runs.js' */
@@ -44,7 +43,7 @@ export async function submitPackage(deps, stageRunId, versionIds, actor) {
   if (owner.rows.length === 0) {
     throw new NotFoundError('Stage run not found');
   }
-  return withTransaction(deps.pool, async (tx) => {
+  return workflowTransaction(deps, async (tx) => {
     const initiative = await lockInitiative(tx, owner.rows[0].initiative_id);
     const stageRun = /** @type {StageRunRow} */ (await lockStageRun(tx, stageRunId));
     if (stageRun.state !== 'active') {
@@ -53,7 +52,7 @@ export async function submitPackage(deps, stageRunId, versionIds, actor) {
     const stage = stageByKey(deps.stages, stageRun.stage_key);
     const hashes = await packageVersionHashes(tx, stageRun, stage, versionIds);
     await assertNoBlockingQuestions(tx, stageRunId);
-    const supersededGate = await supersedeOpenPackage(tx, deps, actor, initiative, stageRunId);
+    await supersedeOpenPackage(tx, deps, actor, { initiative, stageRun, stage });
 
     const { rows } = await tx.query(
       `INSERT INTO review_packages (stage_run_id, package_hash, submitted_by, submitted_at, status)
@@ -67,7 +66,7 @@ export async function submitPackage(deps, stageRunId, versionIds, actor) {
         [pkg.id, versionId],
       );
     }
-    await audit(
+    audit(
       tx,
       deps,
       actor,
@@ -85,7 +84,6 @@ export async function submitPackage(deps, stageRunId, versionIds, actor) {
       stageRun,
       stage,
       packageId: pkg.id,
-      supersededGate,
     });
     return { id: pkg.id, packageHash: pkg.package_hash, versionIds, gateRunId };
   });
@@ -142,65 +140,74 @@ async function assertNoBlockingQuestions(tx, stageRunId) {
 }
 
 /**
- * Supersede the stage run's open package, if any, cancelling its open gate run.
+ * Supersede the stage run's open package, if any. Its waiting gate is cancelled and the stage's
+ * steps restart from the first (core-design section 5), so the new package goes through every
+ * gate again, not only the one that happened to be waiting.
  * @param {import('pg').PoolClient} tx Transaction.
  * @param {WorkflowDeps} deps Dependencies.
  * @param {Actor} actor Who is resubmitting.
- * @param {InitiativeRow} initiative Initiative.
- * @param {string} stageRunId Stage run ID.
- * @returns {Promise<string | null>} The step run whose gate was cancelled, if any.
+ * @param {{ initiative: InitiativeRow, stageRun: StageRunRow, stage: StageDefinition }} context
+ *   Where the resubmission happens.
+ * @returns {Promise<void>}
  */
-async function supersedeOpenPackage(tx, deps, actor, initiative, stageRunId) {
+async function supersedeOpenPackage(tx, deps, actor, { initiative, stageRun, stage }) {
   const { rows } = await tx.query(
     `UPDATE review_packages SET status = 'superseded'
      WHERE stage_run_id = $1 AND status = 'open' RETURNING id`,
-    [stageRunId],
+    [stageRun.id],
   );
   if (rows.length === 0) {
-    return null;
+    return;
   }
-  const { rows: gates } = await tx.query(
+  const supersededId = rows[0].id;
+  const now = deps.now();
+  await tx.query(
     `UPDATE gate_runs SET state = 'cancelled', closed_at = $2
-     WHERE package_id = $1 AND state = 'open' RETURNING step_run_id`,
-    [rows[0].id, deps.now()],
+     WHERE package_id = $1 AND state = 'open'`,
+    [supersededId, now],
   );
-  await audit(
+  const [{ cycle }] = await currentCycleSteps(tx, stageRun.id);
+  await tx.query(
+    `UPDATE step_runs SET state = 'skipped', completed_at = $3
+     WHERE stage_run_id = $1 AND cycle = $2 AND state IN ('pending', 'running', 'waiting')`,
+    [stageRun.id, cycle, now],
+  );
+  await insertCycle(tx, deps, {
+    stageRunId: stageRun.id,
+    stage,
+    flags: initiative.flags,
+    cycle: cycle + 1,
+  });
+  const entity = { type: 'review_package', id: supersededId };
+  audit(tx, deps, actor, 'package.superseded', entity, initiative.id, { stageRunId: stageRun.id });
+  audit(
     tx,
     deps,
     actor,
-    'package.superseded',
-    { type: 'review_package', id: rows[0].id },
+    'stage_run.restarted',
+    { type: 'stage_run', id: stageRun.id },
     initiative.id,
     {
-      stageRunId,
+      cycle: cycle + 1,
+      reason: 'resubmitted',
     },
   );
-  return gates[0]?.step_run_id ?? null;
 }
 
 /**
- * Move the stage on with the new package: complete the running work step (via `nextMove`), or,
- * when a waiting gate's package was just superseded, reopen that gate on the new package.
+ * Move the stage on with the new package: complete the running work step through `nextMove`,
+ * which opens the first gate.
  * @param {import('pg').PoolClient} tx Transaction.
  * @param {WorkflowDeps} deps Dependencies.
  * @param {Actor} actor Who submitted.
- * @param {{ initiative: InitiativeRow, stageRun: StageRunRow, stage: StageDefinition, packageId: string, supersededGate: string | null }} context
+ * @param {{ initiative: InitiativeRow, stageRun: StageRunRow, stage: StageDefinition, packageId: string }} context
  *   Where the submission happens.
  * @returns {Promise<string | null>} The gate run now open, if any.
- * @throws {InvalidTransitionError} When no step is waiting for a package.
+ * @throws {InvalidTransitionError} When no work step is waiting for a package.
  */
 async function advance(tx, deps, actor, context) {
-  const { initiative, stageRun, stage, packageId, supersededGate } = context;
+  const { initiative, stageRun, stage, packageId } = context;
   const steps = await currentCycleSteps(tx, stageRun.id);
-  const waitingGate = steps.find((run) => run.id === supersededGate);
-  if (waitingGate !== undefined) {
-    const step = stage.steps.find((candidate) => candidate.key === waitingGate.step_key);
-    return startStep(tx, deps, {
-      stepRun: waitingGate,
-      step: /** @type {import('../stages/index.js').StepDefinition} */ (step),
-      packageId,
-    });
-  }
   const running = steps.find((run) => run.state === 'running' && run.step_type === 'work');
   if (running === undefined) {
     throw new InvalidTransitionError('No work step in this stage run is waiting for a package');

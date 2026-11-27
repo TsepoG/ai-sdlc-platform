@@ -1,7 +1,6 @@
 // @ts-check
-import { withTransaction } from '../db/index.js';
 import { InvalidTransitionError } from '../errors/index.js';
-import { audit } from './context.js';
+import { audit, workflowTransaction } from './context.js';
 import { startStageRun } from './stage-runs.js';
 
 /** @import { Actor, WorkflowDeps } from './context.js' */
@@ -41,7 +40,7 @@ export async function createInitiative(deps, input, actor) {
   const stored = await Promise.all(inputs.map((each) => deps.contentStore.put(each.content)));
   const flags = input.flags ?? {};
 
-  return withTransaction(deps.pool, async (tx) => {
+  return workflowTransaction(deps, async (tx) => {
     const { rows } = await tx.query(
       `INSERT INTO initiatives (title, requester_id, owner_id, status, current_stage_key, flags,
          created_at, updated_at)
@@ -49,7 +48,7 @@ export async function createInitiative(deps, input, actor) {
       [input.title, actor.id, first.key, flags, deps.now()],
     );
     const initiative = rows[0];
-    await audit(
+    audit(
       tx,
       deps,
       actor,
@@ -79,7 +78,7 @@ export async function createInitiative(deps, input, actor) {
          VALUES ($1, 1, $2, $3, 'text', $4, $5, $6) RETURNING id`,
         [artifacts[0].id, stored[index].key, stored[index].hash, actor.type, actor.id, deps.now()],
       );
-      await audit(
+      audit(
         tx,
         deps,
         actor,

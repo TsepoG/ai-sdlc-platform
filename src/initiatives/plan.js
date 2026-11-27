@@ -1,6 +1,6 @@
 // @ts-check
-// Pure planning for the workflow services: which outcome a decision is, which stage comes next,
-// which step runs a stage starts with, and which runs a re-approval makes stale. No I/O.
+// Pure planning for the workflow services: which outcome a decision is, which stage comes next
+// and which step runs a stage starts with. No I/O.
 import { createHash } from 'node:crypto';
 import { canonicalJson } from '../audit/index.js';
 import { InvalidTransitionError } from '../errors/index.js';
@@ -97,53 +97,4 @@ export function initialStepRuns(stage, context) {
     }
     return { stepKey: step.key, stepType: step.type, position, state };
   });
-}
-
-/**
- * @typedef {object} RunLink
- * @property {string} id Stage run ID.
- * @property {string} stageKey Stage key.
- * @property {string} state Stage run state.
- * @property {string | null} inputPackageId Approved upstream package it started from.
- */
-
-/**
- * Approved runs downstream of a re-approved stage that were built on an older package of it.
- * Their inputs changed, so they must be flagged `upstream_changed` and re-reviewed.
- * @param {object} lineage Every stage run and package of one Initiative.
- * @param {RunLink[]} lineage.runs Stage runs.
- * @param {{ id: string, stageRunId: string }[]} lineage.packages Review packages.
- * @param {string} lineage.approvedRunId The run just approved.
- * @param {string} lineage.approvedPackageId The package just approved.
- * @returns {string[]} IDs of the stale runs.
- */
-export function findStaleRuns({ runs, packages, approvedRunId, approvedPackageId }) {
-  const runOfPackage = new Map(packages.map((pkg) => [pkg.id, pkg.stageRunId]));
-  const runById = new Map(runs.map((run) => [run.id, run]));
-  const approvedStage = runById.get(approvedRunId)?.stageKey;
-
-  /**
-   * Whether a run's input chain passes through an older package of the approved stage.
-   * @param {RunLink} run Run to check.
-   * @returns {boolean} True when it was built on superseded upstream work.
-   */
-  const builtOnOlderPackage = (run) => {
-    let packageId = run.inputPackageId;
-    while (packageId !== null) {
-      const upstream = runById.get(/** @type {string} */ (runOfPackage.get(packageId)));
-      if (upstream === undefined) {
-        return false;
-      }
-      if (upstream.stageKey === approvedStage) {
-        return packageId !== approvedPackageId;
-      }
-      packageId = upstream.inputPackageId;
-    }
-    return false;
-  };
-
-  return runs
-    .filter((run) => run.id !== approvedRunId && run.state === 'approved')
-    .filter(builtOnOlderPackage)
-    .map((run) => run.id);
 }

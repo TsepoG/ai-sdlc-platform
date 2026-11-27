@@ -1,7 +1,6 @@
 // @ts-check
-import { withTransaction } from '../db/index.js';
 import { InvalidTransitionError, NotFoundError } from '../errors/index.js';
-import { audit, lockInitiative } from './context.js';
+import { audit, lockInitiative, workflowTransaction } from './context.js';
 
 /** @import { Actor, WorkflowDeps } from './context.js' */
 
@@ -35,14 +34,14 @@ async function initiativeOfVersion(deps, versionId) {
  */
 export async function addOpenQuestion(deps, versionId, input, actor) {
   const initiativeId = await initiativeOfVersion(deps, versionId);
-  return withTransaction(deps.pool, async (tx) => {
+  return workflowTransaction(deps, async (tx) => {
     await lockInitiative(tx, initiativeId);
     const { rows } = await tx.query(
       `INSERT INTO open_questions (version_id, text, blocking, status, created_at)
        VALUES ($1, $2, $3, 'open', $4) RETURNING id`,
       [versionId, input.text, input.blocking, deps.now()],
     );
-    await audit(
+    audit(
       tx,
       deps,
       actor,
@@ -78,7 +77,7 @@ export async function answerQuestion(deps, questionId, input, actor) {
     throw new NotFoundError('Open question not found');
   }
   const initiativeId = found[0].initiative_id;
-  return withTransaction(deps.pool, async (tx) => {
+  return workflowTransaction(deps, async (tx) => {
     await lockInitiative(tx, initiativeId);
     const { rows } = await tx.query(
       `UPDATE open_questions SET status = 'answered', answer = $2, answered_by_id = $3,
@@ -89,7 +88,7 @@ export async function answerQuestion(deps, questionId, input, actor) {
     if (rows.length === 0) {
       throw new InvalidTransitionError('This question has already been answered');
     }
-    await audit(
+    audit(
       tx,
       deps,
       actor,
@@ -112,23 +111,15 @@ export async function answerQuestion(deps, questionId, input, actor) {
  */
 export async function addComment(deps, versionId, input, actor) {
   const initiativeId = await initiativeOfVersion(deps, versionId);
-  return withTransaction(deps.pool, async (tx) => {
+  return workflowTransaction(deps, async (tx) => {
     const { rows } = await tx.query(
       `INSERT INTO comments (version_id, anchor, author_id, body, created_at)
        VALUES ($1, $2, $3, $4, $5) RETURNING id`,
       [versionId, input.anchor ?? null, actor.id, input.body, deps.now()],
     );
-    await audit(
-      tx,
-      deps,
-      actor,
-      'comment.added',
-      { type: 'comment', id: rows[0].id },
-      initiativeId,
-      {
-        versionId,
-      },
-    );
+    audit(tx, deps, actor, 'comment.added', { type: 'comment', id: rows[0].id }, initiativeId, {
+      versionId,
+    });
     return { id: rows[0].id };
   });
 }

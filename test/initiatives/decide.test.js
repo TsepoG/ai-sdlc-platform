@@ -8,10 +8,12 @@ import {
   SeparationOfDutiesError,
   StalePackageError,
 } from '../../src/errors/index.js';
-import { AUTHOR, createHarness, draftAndSubmit, REVIEWER } from './harness.js';
+import { activeRun, AUTHOR, createHarness, draftAndSubmit, REVIEWER } from './harness.js';
 
 const PRODUCT_OWNER = ['product-owner'];
 const UNKNOWN_ID = '00000000-0000-4000-8000-000000000000';
+/** @type {import('../../src/initiatives/index.js').Actor} */
+const EARLY_EDITOR = { type: 'user', id: 'u-early-editor' };
 
 /** @type {import('./harness.js').Harness} */
 let harness;
@@ -86,6 +88,50 @@ describe('decide refuses without writing anything', () => {
       InvalidTransitionError,
     );
     expect(await writes()).toEqual(before);
+  });
+
+  it('refuses the person who submitted the package, even if someone else wrote it', async () => {
+    const run = await activeRun(harness, initiativeId, 'brief');
+    const nfrs = /** @type {{ id: string }} */ (run.artifacts.find((a) => a.type === 'nfrs'));
+    const version = await harness.service.saveVersion(nfrs.id, { content: 'NFRs' }, AUTHOR);
+    const submitted = await harness.service.submitPackage(run.id, [version.id], REVIEWER);
+    const before = await writes();
+
+    await expect(
+      harness.service.decide(
+        /** @type {string} */ (submitted.gateRunId),
+        { outcome: 'approve', packageHash: submitted.packageHash },
+        REVIEWER,
+        PRODUCT_OWNER,
+      ),
+    ).rejects.toThrow(SeparationOfDutiesError);
+    expect(await writes()).toEqual(before);
+  });
+
+  it('refuses anyone who wrote an earlier version the package derives from', async () => {
+    const run = await activeRun(harness, initiativeId, 'brief');
+    const nfrs = /** @type {{ id: string }} */ (run.artifacts.find((a) => a.type === 'nfrs'));
+    const draft = await harness.service.saveVersion(nfrs.id, { content: 'v1' }, EARLY_EDITOR);
+    const middle = await harness.service.saveVersion(
+      nfrs.id,
+      { content: 'v2', sourceVersionIds: [draft.id] },
+      AUTHOR,
+    );
+    const final = await harness.service.saveVersion(
+      nfrs.id,
+      { content: 'v3', sourceVersionIds: [middle.id] },
+      AUTHOR,
+    );
+    const submitted = await harness.service.submitPackage(run.id, [final.id], AUTHOR);
+
+    await expect(
+      harness.service.decide(
+        /** @type {string} */ (submitted.gateRunId),
+        { outcome: 'approve', packageHash: submitted.packageHash },
+        EARLY_EDITOR,
+        PRODUCT_OWNER,
+      ),
+    ).rejects.toThrow(SeparationOfDutiesError);
   });
 
   it('refuses an unknown gate run with 404', async () => {

@@ -101,7 +101,7 @@ async function restartStage(tx, deps, actor, { initiative, stageRun, stage, step
   await skipPendingSteps(tx, stageRun.id, stepRun.cycle);
   const cycle = stepRun.cycle + 1;
   await insertCycle(tx, deps, { stageRunId: stageRun.id, stage, flags: initiative.flags, cycle });
-  await audit(
+  audit(
     tx,
     deps,
     actor,
@@ -116,8 +116,9 @@ async function restartStage(tx, deps, actor, { initiative, stageRun, stage, step
 }
 
 /**
- * Rejected with a rework target: supersede every active run after the target and start a new
- * attempt of the target, from the same input its previous attempt had.
+ * Rejected with a rework target: supersede every later run, active or approved (core-design
+ * section 5), and start a new attempt of the target from the same input its previous attempt
+ * had. Re-approving the target then starts fresh attempts downstream.
  * @param {import('pg').PoolClient} tx Transaction.
  * @param {WorkflowDeps} deps Dependencies.
  * @param {Actor} actor Who rejected.
@@ -132,11 +133,12 @@ async function reworkTo(tx, deps, actor, { initiative, stageRun, stepRun, packag
   const laterKeys = deps.stages.filter((stage) => stage.order > target.order).map((s) => s.key);
   const { rows: superseded } = await tx.query(
     `UPDATE stage_runs SET state = 'superseded', completed_at = $3
-     WHERE initiative_id = $1 AND state = 'active' AND stage_key = ANY($2) RETURNING id`,
+     WHERE initiative_id = $1 AND state IN ('active', 'approved') AND stage_key = ANY($2)
+     RETURNING id`,
     [initiative.id, laterKeys, deps.now()],
   );
   for (const { id } of superseded) {
-    await audit(tx, deps, actor, 'stage_run.superseded', { type: 'stage_run', id }, initiative.id, {
+    audit(tx, deps, actor, 'stage_run.superseded', { type: 'stage_run', id }, initiative.id, {
       reworkTarget: targetKey,
     });
   }
@@ -172,7 +174,7 @@ async function cancelInitiative(tx, deps, actor, { initiative, stageRun, stepRun
     status: 'cancelled',
     currentStageKey: stageRun.stage_key,
   });
-  await audit(
+  audit(
     tx,
     deps,
     actor,

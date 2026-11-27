@@ -1,6 +1,6 @@
 // @ts-check
-// Rework and upstream-changed, with a fixture where three stages are enabled (the real config
-// enables only Brief). Alpha → Beta → Gamma; Gamma can rework to Alpha or Beta.
+// Handoff and rework with a fixture where three stages are enabled (the real config enables
+// only Brief). Alpha → Beta → Gamma; Gamma can rework to Alpha or Beta.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { verifyAuditChain } from '../../src/audit/index.js';
 import { InvalidTransitionError } from '../../src/errors/index.js';
@@ -81,6 +81,29 @@ describe('stage handoff', () => {
     ]);
   });
 
+  it('sends a resubmission made at a later gate back through every gate from the first', async () => {
+    await approveStage('alpha');
+    await approveStage('beta');
+    const first = await approveStage('gamma');
+    expect(first.move).toEqual({ kind: 'next_step', stepKey: 'signoff-gamma' });
+
+    const resubmitted = await draftAndSubmit(harness, initiativeId, 'gamma', 'changed content');
+
+    const gamma = await activeRun(harness, initiativeId, 'gamma');
+    const open = gamma.gates.filter((gate) => gate.state === 'open');
+    expect(open).toHaveLength(1);
+    expect(open[0].id).toBe(resubmitted.gateRunId);
+    const openStep = gamma.steps.find((step) => step.id === open[0].stepRunId);
+    expect(openStep).toMatchObject({ stepKey: 'review-gamma', cycle: 2 });
+    const { move } = await harness.service.decide(
+      /** @type {string} */ (resubmitted.gateRunId),
+      { outcome: 'approve', packageHash: resubmitted.packageHash },
+      REVIEWER,
+      LEAD,
+    );
+    expect(move).toEqual({ kind: 'next_step', stepKey: 'signoff-gamma' });
+  });
+
   it('marks the Initiative done after the last stage', async () => {
     await approveStage('alpha');
     await approveStage('beta');
@@ -103,11 +126,15 @@ describe('stage handoff', () => {
 });
 
 describe('rework', () => {
-  it('starts a new attempt at the target and supersedes the active later run', async () => {
+  /**
+   * Approve alpha and beta, then reject gamma back to alpha.
+   * @returns {Promise<{ beta: Awaited<ReturnType<typeof approveStage>>, move: import('../../src/workflow/index.js').Move }>}
+   *   Beta's approval and the move the rejection caused.
+   */
+  async function reworkGammaToAlpha() {
     await approveStage('alpha');
-    await approveStage('beta');
+    const beta = await approveStage('beta');
     const gamma = await draftAndSubmit(harness, initiativeId, 'gamma');
-
     const { move } = await harness.service.decide(
       /** @type {string} */ (gamma.gateRunId),
       {
@@ -119,11 +146,16 @@ describe('rework', () => {
       REVIEWER,
       LEAD,
     );
+    return { beta, move };
+  }
+
+  it('supersedes every later run, approved or active, and starts a new attempt at the target', async () => {
+    const { move } = await reworkGammaToAlpha();
 
     expect(move).toEqual({ kind: 'rework', stageKey: 'alpha' });
     expect(await runSummary()).toEqual([
       'alpha#1:approved',
-      'beta#1:approved',
+      'beta#1:superseded',
       'gamma#1:superseded',
       'alpha#2:active',
     ]);
@@ -131,51 +163,31 @@ describe('rework', () => {
     expect(view).toMatchObject({ status: 'active', currentStageKey: 'alpha' });
   });
 
-  it('flags downstream runs upstream_changed when the target is re-approved', async () => {
-    await approveStage('alpha');
-    const beta = await approveStage('beta');
-    const gamma = await draftAndSubmit(harness, initiativeId, 'gamma');
-    await harness.service.decide(
-      /** @type {string} */ (gamma.gateRunId),
-      { outcome: 'reject', reworkTarget: 'alpha', packageHash: gamma.packageHash },
-      REVIEWER,
-      LEAD,
-    );
+  it('starts fresh downstream attempts from the re-approved package', async () => {
+    await reworkGammaToAlpha();
 
     const alphaAgain = await approveStage('alpha');
 
     expect(await runSummary()).toEqual([
       'alpha#1:approved',
-      'beta#1:upstream_changed',
+      'beta#1:superseded',
       'gamma#1:superseded',
       'alpha#2:approved',
       'beta#2:active',
     ]);
     expect((await activeRun(harness, initiativeId, 'beta')).inputPackageId).toBe(alphaAgain.id);
-    const actions = (await harness.service.getTimeline(initiativeId)).map((event) => event.action);
-    expect(actions).toContain('stage_run.upstream_changed');
-    expect(beta.stageRunId).toEqual(expect.any(String));
     expect((await verifyAuditChain(harness.db.pool)).ok).toBe(true);
   });
 
-  it('blocks work on a run whose upstream changed', async () => {
-    await approveStage('alpha');
-    const beta = await approveStage('beta');
-    const gamma = await draftAndSubmit(harness, initiativeId, 'gamma');
-    await harness.service.decide(
-      /** @type {string} */ (gamma.gateRunId),
-      { outcome: 'reject', reworkTarget: 'alpha', packageHash: gamma.packageHash },
-      REVIEWER,
-      LEAD,
-    );
-    await approveStage('alpha');
-    const staleView = await harness.service.getInitiative(initiativeId);
-    const staleBeta = /** @type {import('../../src/initiatives/queries.js').StageRunView} */ (
-      staleView.stageRuns.find((run) => run.id === beta.stageRunId)
+  it('blocks work on a superseded run', async () => {
+    const { beta } = await reworkGammaToAlpha();
+    const view = await harness.service.getInitiative(initiativeId);
+    const superseded = /** @type {import('../../src/initiatives/queries.js').StageRunView} */ (
+      view.stageRuns.find((run) => run.id === beta.stageRunId)
     );
 
     await expect(
-      harness.service.saveVersion(staleBeta.artifacts[0].id, { content: 'edit' }, AUTHOR),
+      harness.service.saveVersion(superseded.artifacts[0].id, { content: 'edit' }, AUTHOR),
     ).rejects.toThrow(InvalidTransitionError);
     await expect(
       harness.service.submitPackage(beta.stageRunId, [beta.versionId], AUTHOR),

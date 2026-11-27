@@ -190,6 +190,12 @@ describe('submitPackage', () => {
       [false, 'open'],
     ]);
     expect(second.gateRunId).not.toBe(first.gateRunId);
+    expect(view.steps.filter((step) => step.cycle === 2).map((step) => step.state)).toEqual([
+      'done',
+      'waiting',
+    ]);
+    const actions = (await harness.service.getTimeline(initiativeId)).map((event) => event.action);
+    expect(actions).toContain('stage_run.restarted');
   });
 
   it('refuses an unknown stage run with 404', async () => {

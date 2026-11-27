@@ -1,5 +1,6 @@
 // @ts-check
 import { appendAuditEvent } from '../audit/index.js';
+import { withTransaction } from '../db/index.js';
 import { NotFoundError } from '../errors/index.js';
 
 /** @import { StageDefinition } from '../stages/index.js' */
@@ -28,21 +29,55 @@ import { NotFoundError } from '../errors/index.js';
  * @property {Record<string, boolean>} flags Initiative flags.
  */
 
+/** Audit events waiting for their transaction to finish, per transaction connection. */
+const pendingAudit = new WeakMap();
+
 /**
- * Append an audit event for a workflow change, inside the caller's transaction.
- * @param {import('pg').PoolClient} tx Transaction.
+ * Run workflow work in one transaction. Audit events recorded with `audit()` are buffered and
+ * appended together at the end, just before commit, so the audit chain head is always the last
+ * lock a workflow transaction takes (ADR 0004) and is held only briefly.
+ * @template T
+ * @param {WorkflowDeps} deps Dependencies.
+ * @param {(tx: import('pg').PoolClient) => Promise<T>} work The workflow change.
+ * @returns {Promise<T>} What `work` returned.
+ */
+export function workflowTransaction(deps, work) {
+  return withTransaction(deps.pool, async (tx) => {
+    /** @type {{ event: import('../audit/index.js').AuditEventInput, at: Date }[]} */
+    const events = [];
+    pendingAudit.set(tx, events);
+    try {
+      const result = await work(tx);
+      for (const { event, at } of events) {
+        await appendAuditEvent(tx, event, { now: () => at });
+      }
+      return result;
+    } finally {
+      pendingAudit.delete(tx);
+    }
+  });
+}
+
+/**
+ * Record an audit event for a workflow change. It is appended when the surrounding
+ * `workflowTransaction` finishes, and only if it commits.
+ * @param {import('pg').PoolClient} tx Transaction from `workflowTransaction`.
  * @param {WorkflowDeps} deps Dependencies (for the clock).
  * @param {Actor} actor Who acted.
  * @param {string} action What happened, e.g. `package.submitted`.
  * @param {{ type: string, id: string }} entity Record changed.
  * @param {string} initiativeId Initiative it belongs to.
  * @param {Record<string, unknown>} [data] Details.
- * @returns {Promise<void>}
+ * @returns {void}
+ * @throws {Error} When called outside a workflow transaction (a programming error).
  */
-export async function audit(tx, deps, actor, action, entity, initiativeId, data = {}) {
-  await appendAuditEvent(
-    tx,
-    {
+export function audit(tx, deps, actor, action, entity, initiativeId, data = {}) {
+  const events = pendingAudit.get(tx);
+  if (events === undefined) {
+    throw new Error('audit() must be called inside workflowTransaction()');
+  }
+  events.push({
+    event: {
       actorType: actor.type,
       actorId: actor.id,
       action,
@@ -51,8 +86,8 @@ export async function audit(tx, deps, actor, action, entity, initiativeId, data 
       initiativeId,
       data,
     },
-    { now: deps.now },
-  );
+    at: deps.now(),
+  });
 }
 
 /**

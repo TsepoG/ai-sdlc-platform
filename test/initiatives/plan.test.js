@@ -2,7 +2,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { InvalidTransitionError } from '../../src/errors/index.js';
 import {
-  findStaleRuns,
   initialStepRuns,
   nextStage,
   stageByKey,
@@ -83,45 +82,5 @@ describe('initialStepRuns', () => {
     const runs = initialStepRuns(stageByKey(stages, 'tech-design'), { flags: {} });
 
     expect(runs.find((run) => run.stepKey === 'tdf-approval')?.state).toBe('skipped');
-  });
-});
-
-describe('findStaleRuns', () => {
-  /** Runs: A1 (old approval) -> B1 approved -> C1; A2 newly approved after rework. */
-  const runs = [
-    { id: 'a1', stageKey: 'a', state: 'superseded', inputPackageId: null },
-    { id: 'b1', stageKey: 'b', state: 'approved', inputPackageId: 'pa1' },
-    { id: 'c1', stageKey: 'c', state: 'superseded', inputPackageId: 'pb1' },
-    { id: 'a2', stageKey: 'a', state: 'approved', inputPackageId: null },
-  ];
-  const packages = [
-    { id: 'pa1', stageRunId: 'a1' },
-    { id: 'pb1', stageRunId: 'b1' },
-    { id: 'pa2', stageRunId: 'a2' },
-  ];
-
-  it('flags approved downstream runs built on an older package of the re-approved stage', () => {
-    expect(
-      findStaleRuns({ runs, packages, approvedRunId: 'a2', approvedPackageId: 'pa2' }),
-    ).toEqual(['b1']);
-  });
-
-  it('ignores runs built on the newly approved package', () => {
-    const fresh = [...runs, { id: 'b2', stageKey: 'b', state: 'approved', inputPackageId: 'pa2' }];
-
-    expect(
-      findStaleRuns({ runs: fresh, packages, approvedRunId: 'a2', approvedPackageId: 'pa2' }),
-    ).toEqual(['b1']);
-  });
-
-  it('flags nothing on a first approval', () => {
-    expect(
-      findStaleRuns({
-        runs: [{ id: 'a1', stageKey: 'a', state: 'approved', inputPackageId: null }],
-        packages: [{ id: 'pa1', stageRunId: 'a1' }],
-        approvedRunId: 'a1',
-        approvedPackageId: 'pa1',
-      }),
-    ).toEqual([]);
   });
 });

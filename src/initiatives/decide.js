@@ -1,8 +1,7 @@
 // @ts-check
-import { withTransaction } from '../db/index.js';
 import { GateNotOpenError, InvalidTransitionError, NotFoundError } from '../errors/index.js';
 import { assertCanDecide, assertCurrentPackage, nextMove } from '../workflow/index.js';
-import { audit, lockInitiative } from './context.js';
+import { audit, lockInitiative, workflowTransaction } from './context.js';
 import { applyMove } from './moves.js';
 import { stageByKey, toStepOutcome } from './plan.js';
 import { lockStageRun } from './stage-runs.js';
@@ -49,7 +48,7 @@ export async function decide(deps, gateRunId, input, actor, roles) {
   if (owner.rows.length === 0) {
     throw new NotFoundError('Gate run not found');
   }
-  return withTransaction(deps.pool, async (tx) => {
+  return workflowTransaction(deps, async (tx) => {
     const initiative = await lockInitiative(tx, owner.rows[0].initiative_id);
     const gate = await lockOpenGate(tx, gateRunId);
     assertCurrentPackage(gate.package_hash, input.packageHash);
@@ -67,7 +66,7 @@ export async function decide(deps, gateRunId, input, actor, roles) {
     const move = nextMove(stage, { flags: initiative.flags }, gate.step_key, toStepOutcome(input));
 
     const decisionId = await recordDecision(tx, deps, gateRunId, input, actor);
-    await audit(
+    audit(
       tx,
       deps,
       actor,
@@ -135,18 +134,28 @@ async function lockOpenGate(tx, gateRunId) {
 }
 
 /**
- * Everyone who authored a version in the package (separation of duties).
+ * Everyone who authored or edited the package (separation of duties): who created each version
+ * in it, who submitted it, and who created any version those versions derive from, following
+ * `source_version_ids` back through every generation.
  * @param {import('pg').PoolClient} tx Transaction.
  * @param {string} packageId Package ID.
  * @returns {Promise<string[]>} Author IDs.
  */
 async function packageAuthors(tx, packageId) {
   const { rows } = await tx.query(
-    `SELECT DISTINCT v.created_by_id FROM review_package_versions pv
-     JOIN artifact_versions v ON v.id = pv.version_id WHERE pv.package_id = $1`,
+    `WITH RECURSIVE lineage(id) AS (
+       SELECT version_id FROM review_package_versions WHERE package_id = $1
+       UNION
+       SELECT source.id FROM lineage
+       JOIN artifact_versions v ON v.id = lineage.id
+       JOIN artifact_versions source ON source.id = ANY(v.source_version_ids)
+     )
+     SELECT v.created_by_id AS author FROM lineage JOIN artifact_versions v ON v.id = lineage.id
+     UNION
+     SELECT submitted_by FROM review_packages WHERE id = $1`,
     [packageId],
   );
-  return rows.map((row) => row.created_by_id);
+  return rows.map((row) => row.author);
 }
 
 /**
