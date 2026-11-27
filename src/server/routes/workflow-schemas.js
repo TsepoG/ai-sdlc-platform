@@ -5,7 +5,23 @@ import { ValidationError } from '../../errors/index.js';
 const MAX_TITLE = 300;
 const MAX_TEXT = 200_000;
 
-const text = z.string().min(1).max(MAX_TEXT);
+/**
+ * Text PostgreSQL can store: no NUL characters and no lone UTF-16 surrogates. Either would make
+ * the insert fail with a 500; refusing them here gives the caller a 400 instead.
+ * @param {string} value Text.
+ * @returns {boolean} True when storable.
+ */
+const storable = (value) => !value.includes('\u0000') && value.isWellFormed();
+const STORABLE_MESSAGE = 'Must not contain NUL characters or unpaired surrogates';
+
+/**
+ * A storable string of bounded length.
+ * @param {number} max Maximum length.
+ * @returns {z.ZodString} Schema.
+ */
+const safeText = (max) => z.string().min(1).max(max).refine(storable, STORABLE_MESSAGE);
+
+const text = safeText(MAX_TEXT);
 const uuid = z.uuid();
 
 /** Path parameter `:id`. */
@@ -13,7 +29,7 @@ export const idParams = z.strictObject({ id: uuid });
 
 /** POST /initiatives */
 export const createInitiativeBody = z.strictObject({
-  title: z.string().min(1).max(MAX_TITLE),
+  title: safeText(MAX_TITLE),
   request: text,
   notes: text.optional(),
   flags: z.record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9]*$/), z.boolean()).optional(),
@@ -33,7 +49,7 @@ export const submitPackageBody = z.strictObject({ versionIds: z.array(uuid).min(
 export const decisionBody = z.strictObject({
   outcome: z.enum(['approve', 'request_changes', 'reject']),
   packageHash: z.string().regex(/^[0-9a-f]{64}$/),
-  reworkTarget: z.string().min(1).optional(),
+  reworkTarget: safeText(MAX_TITLE).optional(),
   feedback: text.optional(),
 });
 

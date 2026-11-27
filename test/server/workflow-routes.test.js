@@ -192,6 +192,16 @@ describe('workflow route errors', () => {
     expect(response.json().error.code).toBe('VALIDATION_FAILED');
   });
 
+  it.each([
+    ['a NUL character', 'nul\u0000here'],
+    ['a lone surrogate', 'broken\ud800text'],
+  ])('refuses text containing %s with 400, not a database error', async (_name, title) => {
+    const response = await send('POST', '/initiatives', AUTHOR, { title, request: 'x' });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.message).toContain('title');
+  });
+
   it('names the failing field but never echoes the value', async () => {
     const response = await send('POST', '/initiatives', AUTHOR, { title: 'x', request: 42 });
 

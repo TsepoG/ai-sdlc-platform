@@ -197,6 +197,33 @@ describe('loadConfig', () => {
       expect(error.message).toContain('AUTH_MODE');
     });
 
+    it.each([
+      ['WORKFLOW_API_ENABLED', { WORKFLOW_API_ENABLED: 'true' }],
+      ['AUTH_MODE', { AUTH_MODE: 'dev-headers' }],
+    ])('refuses %s when NODE_ENV is production, whatever PLATFORM_ENV says', (key, extra) => {
+      const error = configErrorFor({
+        ...validEnv,
+        NODE_ENV: 'production',
+        PLATFORM_ENV: 'test',
+        ...extra,
+      });
+
+      expect(error.message).toContain(key);
+    });
+
+    it.each(['platform-dev', 'platform-prod'])(
+      'refuses DATABASE_SSL=false in %s',
+      (platformEnv) => {
+        const error = configErrorFor({
+          ...validEnv,
+          PLATFORM_ENV: platformEnv,
+          DATABASE_SSL: 'false',
+        });
+
+        expect(error.message).toContain('DATABASE_SSL');
+      },
+    );
+
     it('allows the defaults in a deployed environment', () => {
       expect(loadConfig({ ...validEnv, PLATFORM_ENV: 'platform-prod' }).workflowApiEnabled).toBe(
         false,

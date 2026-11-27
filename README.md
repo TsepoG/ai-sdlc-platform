@@ -101,7 +101,7 @@ Workflow state lives in PostgreSQL; there is no separate workflow engine ([ADR 0
 
 ### Workflow API (local and test only)
 
-The dev load balancer is public HTTP with no SSO yet, so the workflow routes register only when `WORKFLOW_API_ENABLED=true`, and config refuses that unless `PLATFORM_ENV` is `local` or `test`. Identity is a dev-only header pair, `x-dev-user-id` and `x-dev-user-roles` (comma-separated), accepted only with `AUTH_MODE=dev-headers` under the same condition. Phase 04 replaces it with SSO.
+The dev load balancer is public HTTP with no SSO yet, so the workflow routes register only when `WORKFLOW_API_ENABLED=true`. Config refuses that unless `PLATFORM_ENV` is `local` or `test` **and** `NODE_ENV` is not `production`. The image always runs with `NODE_ENV=production`, so the workflow API runs only via `npm start`, never in the container. In deployed environments config also refuses `DATABASE_SSL=false`. Text fields reject NUL characters and unpaired surrogates with a 400. Identity is a dev-only header pair, `x-dev-user-id` and `x-dev-user-roles` (comma-separated), accepted only with `AUTH_MODE=dev-headers` under the same condition. Phase 04 replaces it with SSO.
 
 | Route                                                    | Purpose                                                                                                                                   |
 | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |

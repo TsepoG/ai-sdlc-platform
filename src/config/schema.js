@@ -12,6 +12,8 @@ export const PLATFORM_ENVS = /** @type {const} */ ([
 ]);
 /** Platform environments where the workflow API and dev auth may be switched on. */
 export const UNDEPLOYED_PLATFORM_ENVS = /** @type {const} */ (['local', 'test']);
+/** Platform environments running in AWS, where the database connection must use TLS. */
+const DEPLOYED_PLATFORM_ENVS = /** @type {readonly string[]} */ (['platform-dev', 'platform-prod']);
 /** Allowed LOG_LEVEL values (pino levels plus silent). */
 export const LOG_LEVELS = /** @type {const} */ ([
   'fatal',
@@ -79,21 +81,31 @@ const baseSchema = z.object({
  * @returns {void}
  */
 function checkCombinations(env, ctx) {
-  const undeployed = /** @type {readonly string[]} */ (UNDEPLOYED_PLATFORM_ENVS).includes(
-    env.PLATFORM_ENV,
-  );
+  // Two independent signals must both say "not deployed": the platform environment, and a
+  // non-production runtime (the image always runs with NODE_ENV=production).
+  const undeployed =
+    /** @type {readonly string[]} */ (UNDEPLOYED_PLATFORM_ENVS).includes(env.PLATFORM_ENV) &&
+    env.NODE_ENV !== 'production';
   if (env.WORKFLOW_API_ENABLED && !undeployed) {
     ctx.addIssue({
       code: 'custom',
       path: ['WORKFLOW_API_ENABLED'],
-      message: 'can be true only when PLATFORM_ENV is local or test',
+      message: 'can be true only when PLATFORM_ENV is local or test and NODE_ENV is not production',
     });
   }
   if (env.AUTH_MODE === 'dev-headers' && !undeployed) {
     ctx.addIssue({
       code: 'custom',
       path: ['AUTH_MODE'],
-      message: 'dev-headers is allowed only when PLATFORM_ENV is local or test',
+      message:
+        'dev-headers is allowed only when PLATFORM_ENV is local or test and NODE_ENV is not production',
+    });
+  }
+  if (!env.DATABASE_SSL && DEPLOYED_PLATFORM_ENVS.includes(env.PLATFORM_ENV)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['DATABASE_SSL'],
+      message: 'must be true in a deployed environment',
     });
   }
   if (env.CONTENT_STORE === 's3' && env.CONTENT_BUCKET === undefined) {
