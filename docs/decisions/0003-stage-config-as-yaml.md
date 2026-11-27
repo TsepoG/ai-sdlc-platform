@@ -1,6 +1,6 @@
 # 0003. Stage configuration as YAML files in the repository
 
-**Status:** Proposed (2026-11-26), for the owner to accept with the Phase 01 PR.
+**Status:** Accepted (2026-11-27).
 
 ## Context
 

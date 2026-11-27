@@ -35,11 +35,16 @@ stop and ask rather than choosing.
 
 ## Current state
 
-- **Phase:** 01 — Core rules ([docs/phases/01-core-rules.md](docs/phases/01-core-rules.md)).
-  Dates per phase are in `docs/phases/ROADMAP.md`.
+- **Phase:** 02 — Persistence and workflow. The phase file
+  (`docs/phases/02-persistence-and-workflow.md`) is still to be written; until
+  it lands, don't start Phase 02 work. Dates per phase are in
+  `docs/phases/ROADMAP.md`.
 - **MVP target:** core platform + basic Brief agent, signed off around
   12 February 2027.
 - **Phase 00 is done.** The pipeline deployed platform dev successfully.
+- **Phase 01 is done** (PR #7, merged 27 Nov 2026): stage config, pure workflow
+  rules, AI contracts, routing and the stub provider, `GET /stages`. Its last
+  acceptance check, `GET /stages` on dev, runs when dev comes back.
 - **Platform dev is paused** to save cost. The platform stack was destroyed on
   26 Nov 2026 and the repository variable `PLATFORM_DEPLOY_ENABLED` is `false`,
   so merges to `main` run CI but don't deploy. The registry stack, the GitHub
@@ -47,6 +52,7 @@ stop and ask rather than choosing.
   7 Dec 2026) by setting `PLATFORM_DEPLOY_ENABLED=true` and merging to `main`.
 - **Settled:**
   - API framework: Fastify (ADR 0002, accepted).
+  - Stage configuration as YAML files in the repo (ADR 0003, accepted).
   - Code quality: SonarQube Cloud, project key `TsepoG_ai-sdlc-platform`.
   - AWS region: `af-south-1`.
 
