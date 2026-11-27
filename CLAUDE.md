@@ -35,10 +35,9 @@ stop and ask rather than choosing.
 
 ## Current state
 
-- **Phase:** 02 — Persistence and workflow. The phase file
-  (`docs/phases/02-persistence-and-workflow.md`) is still to be written; until
-  it lands, don't start Phase 02 work. Dates per phase are in
-  `docs/phases/ROADMAP.md`.
+- **Phase:** 02 — Persistence and workflow
+  ([docs/phases/02-persistence-and-workflow.md](docs/phases/02-persistence-and-workflow.md)).
+  Dates per phase are in `docs/phases/ROADMAP.md`.
 - **MVP target:** core platform + basic Brief agent, signed off around
   12 February 2027.
 - **Phase 00 is done.** The pipeline deployed platform dev successfully.
@@ -53,6 +52,11 @@ stop and ask rather than choosing.
 - **Settled:**
   - API framework: Fastify (ADR 0002, accepted).
   - Stage configuration as YAML files in the repo (ADR 0003, accepted).
+  - Workflow state in PostgreSQL, no workflow engine for the MVP (ADR 0004,
+    proposed with Phase 02). Required before real data (Phase 05): separate
+    migration-owner and application database roles.
+  - Database: RDS for PostgreSQL 17. Tests need a PostgreSQL too
+    (`docker compose up -d`, `TEST_DATABASE_URL`).
   - Code quality: SonarQube Cloud, project key `TsepoG_ai-sdlc-platform`.
   - AWS region: `af-south-1`.
 
@@ -99,7 +103,8 @@ stop and ask rather than choosing.
 
 ```bash
 npm ci
-npm run verify        # format check, lint, typecheck, tests with coverage
+docker compose up -d  # local PostgreSQL 17 (tests need it)
+npm run verify        # format check, lint, typecheck, tests with coverage (needs TEST_DATABASE_URL)
 npm run audit         # npm audit --audit-level=high
 npm test              # tests only
 cd infra && npx cdk synth
@@ -116,8 +121,15 @@ src/
   stages/        stage config loading + validation        (phase 01)
   workflow/      pure sequencing, hashing, duties rules     (phase 01)
   ai/            ModelProvider / CodingAgent / StageAgent contracts, routing, stub (phase 01)
+  db/            pg pool, transactions, migration runner                  (phase 02)
+  content/       content-addressed store: local filesystem or S3          (phase 02)
+  audit/         hash-chained audit events and chain verification         (phase 02)
+  initiatives/   workflow services: create, versions, packages, decide    (phase 02)
+  jobs/          outbox job worker                                        (phase 02)
   ai-adapters/   vendor adapters, e.g. anthropic/ — the only vendor SDK imports (phase 03)
-test/            mirrors src/
+test/            mirrors src/; database tests use TEST_DATABASE_URL
+migrations/      numbered SQL migrations, applied at startup
+certs/           RDS CA bundle shipped in the image
 config/
   stages/        01-brief.yaml … 07-test.yaml
   routing.yaml   provider + model per stage
@@ -131,4 +143,5 @@ docs/
 
 - Model provider route: Anthropic API directly, or Claude via Amazon Bedrock.
 - IdP for SSO and the group-to-role mapping.
-- Workflow engine hosting: Temporal Cloud, self-hosted Temporal, or Step Functions.
+- Durable workflow engine for the Build slice: Step Functions or Temporal
+  (ADR 0004 defers it; the MVP keeps workflow state in PostgreSQL).

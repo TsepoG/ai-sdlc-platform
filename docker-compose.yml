@@ -1,0 +1,22 @@
+# Local PostgreSQL for running the API and the tests. Same major version as RDS (17).
+#   docker compose up -d
+# Credentials are local-only placeholders and match .env.example.
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: change-me-local-only
+      POSTGRES_DB: platform
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U platform -d platform']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:

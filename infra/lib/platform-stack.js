@@ -1,11 +1,20 @@
 // @ts-check
 import { CfnOutput, Duration, SecretValue, Stack } from 'aws-cdk-lib';
-import { Vpc } from 'aws-cdk-lib/aws-ec2';
+import { Port, SubnetType, Vpc } from 'aws-cdk-lib/aws-ec2';
 import { Repository } from 'aws-cdk-lib/aws-ecr';
-import { Cluster, ContainerImage, ContainerInsights, LogDrivers } from 'aws-cdk-lib/aws-ecs';
+import {
+  Cluster,
+  ContainerImage,
+  ContainerInsights,
+  LogDrivers,
+  Secret as EcsSecret,
+} from 'aws-cdk-lib/aws-ecs';
 import { ApplicationLoadBalancedFargateService } from 'aws-cdk-lib/aws-ecs-patterns';
+import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
+import { createArtifactBucket } from './artifact-bucket.js';
+import { createDatabase, POSTGRES_PORT } from './database.js';
 import {
   APP_NAME,
   CONTAINER_PORT,
@@ -20,6 +29,9 @@ const TASK_MEMORY_MIB = 512;
 const HEALTH_CHECK_GRACE_SECONDS = 60;
 const HEALTH_CHECK_INTERVAL_SECONDS = 15;
 const PLACEHOLDER_SECRET_VALUE = 'REPLACE_ME_SET_MANUALLY';
+const SUBNET_CIDR_MASK = 24;
+/** Prefix of every content key (src/content stores `sha256/<hash>`). */
+const CONTENT_KEY_PREFIX = 'sha256/';
 
 /**
  * @typedef {object} PlatformStackProps
@@ -27,7 +39,10 @@ const PLACEHOLDER_SECRET_VALUE = 'REPLACE_ME_SET_MANUALLY';
  * @property {string} imageTag Image tag (commit SHA) to run from the registry.
  */
 
-/** VPC, ECS cluster and a Fargate service behind an ALB, for one platform environment. */
+/**
+ * VPC, ECS cluster, a Fargate service behind an ALB, its PostgreSQL database and artifact bucket,
+ * for one platform environment.
+ */
 export class PlatformStack extends Stack {
   /**
    * Create the platform stack.
@@ -39,7 +54,16 @@ export class PlatformStack extends Stack {
     super(scope, id, stackProps);
     const settings = ENV_SETTINGS[platformEnv];
 
-    const vpc = new Vpc(this, 'Vpc', { maxAzs: MAX_AZS, natGateways: settings.natGateways });
+    const vpc = new Vpc(this, 'Vpc', {
+      maxAzs: MAX_AZS,
+      natGateways: settings.natGateways,
+      subnetConfiguration: [
+        { name: 'Public', subnetType: SubnetType.PUBLIC, cidrMask: SUBNET_CIDR_MASK },
+        { name: 'Private', subnetType: SubnetType.PRIVATE_WITH_EGRESS, cidrMask: SUBNET_CIDR_MASK },
+        // No route out at all: only the service can reach the database, on 5432.
+        { name: 'Database', subnetType: SubnetType.PRIVATE_ISOLATED, cidrMask: SUBNET_CIDR_MASK },
+      ],
+    });
     const cluster = new Cluster(this, 'Cluster', {
       vpc,
       containerInsightsV2: settings.containerInsights
@@ -55,6 +79,17 @@ export class PlatformStack extends Stack {
       description: 'Model provider API key. Placeholder: set the real value manually.',
       secretStringValue: SecretValue.unsafePlainText(PLACEHOLDER_SECRET_VALUE),
     });
+
+    this.database = createDatabase(this, {
+      vpc,
+      platformEnv,
+      protectData: settings.protectData,
+    });
+    this.artifactBucket = createArtifactBucket(this, { protectData: settings.protectData });
+    // The generated secret is always present for Credentials.fromGeneratedSecret.
+    const dbSecret = /** @type {import('aws-cdk-lib/aws-secretsmanager').ISecret} */ (
+      this.database.secret
+    );
 
     // Imported by name so this stack does not depend on RegistryStack being in the same app run.
     const repository = Repository.fromRepositoryName(
@@ -84,9 +119,35 @@ export class PlatformStack extends Stack {
           LOG_LEVEL: 'info',
           APP_VERSION: imageTag,
           PLATFORM_ENV: platformEnv,
+          // TLS with certificate verification; the image trusts the RDS CA bundle it ships.
+          DATABASE_SSL: 'true',
+          CONTENT_STORE: 's3',
+          CONTENT_BUCKET: this.artifactBucket.bucketName,
+        },
+        // Individual fields, never the whole JSON; ECS's execution role reads them at start-up,
+        // so the task role itself needs no access to the secret.
+        secrets: {
+          DATABASE_HOST: EcsSecret.fromSecretsManager(dbSecret, 'host'),
+          DATABASE_PORT: EcsSecret.fromSecretsManager(dbSecret, 'port'),
+          DATABASE_NAME: EcsSecret.fromSecretsManager(dbSecret, 'dbname'),
+          DATABASE_USER: EcsSecret.fromSecretsManager(dbSecret, 'username'),
+          DATABASE_PASSWORD: EcsSecret.fromSecretsManager(dbSecret, 'password'),
         },
       },
     });
+    this.database.connections.allowFrom(
+      this.service.service,
+      Port.tcp(POSTGRES_PORT),
+      'Service to database',
+    );
+    // Content is written once and never deleted, so the task may only get and put objects under
+    // the content-addressed prefix: no list, delete, tagging, retention or bucket access.
+    this.service.taskDefinition.taskRole.addToPrincipalPolicy(
+      new PolicyStatement({
+        actions: ['s3:GetObject', 's3:PutObject'],
+        resources: [this.artifactBucket.arnForObjects(`${CONTENT_KEY_PREFIX}*`)],
+      }),
+    );
     this.service.targetGroup.configureHealthCheck({
       path: HEALTH_PATH,
       interval: Duration.seconds(HEALTH_CHECK_INTERVAL_SECONDS),

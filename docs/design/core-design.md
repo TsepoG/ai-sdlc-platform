@@ -145,11 +145,15 @@ reworkTargets: []
 | New version of an approved upstream artifact    | Downstream StageRuns that used it flagged _upstream changed_ and blocked until re-reviewed                    |
 | Gate SLA at 50% / 100%                          | Reminder to assignee / escalation to backup approver                                                          |
 
-Durable execution: Temporal is the proposed engine (decisions as signals,
-agent runs and integration writes as activities, SLA reminders as timers).
-Hosting is an open question (Temporal Cloud, self-hosted on ECS, or AWS Step
-Functions). Keep sequencing rules pure in `src/workflow` so they don't depend
-on the engine.
+**Implementation (MVP, ADR 0004):** workflow state lives in PostgreSQL; there
+is no separate workflow engine. A wait for an approval is a row, not a running
+process. Each transition runs in one database transaction: load state, apply
+the pure rules in `src/workflow` (`nextMove`, hashing, decision rights), write
+the result with its audit events. Background work (outbox writes, later agent
+runs) goes through a `jobs` table and a small worker in the same service. A
+durable engine (Step Functions or Temporal) is reconsidered at the Build slice,
+when GitHub Actions action steps, their callbacks and SLA timers arrive;
+because the rules stay pure, adopting one then moves orchestration, not rules.
 
 ## 6. Domain model
 
@@ -279,7 +283,7 @@ AgentRun by provider.
 | Runtime          | Node.js, JavaScript (ESM) + JSDoc, checked by `tsc`                                   |
 | API              | Fastify (to confirm; the original doc proposed NestJS, which suits TypeScript better) |
 | Validation       | Zod                                                                                   |
-| Workflow engine  | Temporal (hosting to confirm)                                                         |
+| Workflow engine  | None for the MVP: state in PostgreSQL + job worker (ADR 0004); revisit at Build slice |
 | Database         | Amazon RDS for PostgreSQL                                                             |
 | Artifact storage | Amazon S3                                                                             |
 | Frontend         | React (framework to confirm in the web-app phase)                                     |
@@ -317,7 +321,7 @@ dev and prod on AWS.
 - Security sign-off: Claude via the Anthropic API, or only via Amazon Bedrock?
 - SSO: which IdP, and which groups map to which roles?
 - MVP trial approver and the 5 past requests.
-- Workflow engine hosting.
+- Durable workflow engine for the Build slice (Step Functions or Temporal); deferred by ADR 0004.
 - Record-retention period for approvals and audit events.
 - Existing brief / epic template for the Brief agent.
 - SonarQube: self-hosted SonarQube or SonarCloud; project key.

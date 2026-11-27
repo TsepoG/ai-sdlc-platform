@@ -2,13 +2,20 @@
 import { describe, expect, it } from 'vitest';
 import {
   AppError,
+  BlockingQuestionsError,
+  ContentIntegrityError,
+  GateNotOpenError,
   InvalidPackageError,
+  MigrationError,
+  NotFoundError,
+  ValidationError,
   InvalidTransitionError,
   NotAuthorisedError,
   RoutingError,
   SeparationOfDutiesError,
   StageConfigError,
   StalePackageError,
+  UnauthenticatedError,
 } from '../../src/errors/index.js';
 
 describe.each([
@@ -18,6 +25,13 @@ describe.each([
   ['NotAuthorisedError', NotAuthorisedError, 403, 'NOT_AUTHORISED'],
   ['SeparationOfDutiesError', SeparationOfDutiesError, 403, 'SEPARATION_OF_DUTIES'],
   ['InvalidPackageError', InvalidPackageError, 400, 'PACKAGE_INVALID'],
+  ['NotFoundError', NotFoundError, 404, 'NOT_FOUND'],
+  ['ContentIntegrityError', ContentIntegrityError, 500, 'CONTENT_CORRUPT'],
+  ['GateNotOpenError', GateNotOpenError, 409, 'GATE_NOT_OPEN'],
+  ['BlockingQuestionsError', BlockingQuestionsError, 409, 'BLOCKING_QUESTIONS_OPEN'],
+  ['ValidationError', ValidationError, 400, 'VALIDATION_FAILED'],
+  ['MigrationError', MigrationError, 500, 'MIGRATION_FAILED'],
+  ['UnauthenticatedError', UnauthenticatedError, 401, 'UNAUTHENTICATED'],
 ])('%s', (name, ErrorClass, statusCode, code) => {
   it('is an AppError with its own name, status and stable code', () => {
     const error = new ErrorClass('message');

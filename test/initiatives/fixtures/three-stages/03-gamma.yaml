@@ -1,0 +1,14 @@
+# Two gates in a row: approving the first opens the second on the same package.
+key: gamma
+name: Gamma
+order: 3
+enabled: true
+requiredInputs:
+  - { type: beta-doc, fromStage: beta }
+outputs: [gamma-doc]
+agent: gamma-agent
+steps:
+  - { key: draft-gamma, type: work, agentDrafts: true, assigneeRole: contributor }
+  - { key: review-gamma, type: gate, approverRole: lead }
+  - { key: signoff-gamma, type: gate, approverRole: lead }
+reworkTargets: [alpha, beta]

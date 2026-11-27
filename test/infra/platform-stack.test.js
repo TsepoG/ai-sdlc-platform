@@ -37,8 +37,8 @@ describe('PlatformStack', () => {
   it('spreads the VPC over two availability zones', () => {
     const template = synth('platform-dev');
 
-    // 2 public + 2 private subnets.
-    expect(() => template.resourceCountIs('AWS::EC2::Subnet', 4)).not.toThrow();
+    // 2 public + 2 private (service) + 2 isolated (database) subnets.
+    expect(() => template.resourceCountIs('AWS::EC2::Subnet', 6)).not.toThrow();
   });
 
   it('runs the requested image tag and passes it as APP_VERSION with the environment name', () => {
@@ -65,7 +65,13 @@ describe('PlatformStack', () => {
       }),
     ).not.toThrow();
     const [task] = Object.values(template.findResources('AWS::ECS::TaskDefinition'));
-    expect(task.Properties.ContainerDefinitions[0].Secrets).toBeUndefined();
+    const secretNames = task.Properties.ContainerDefinitions[0].Secrets.map(
+      (/** @type {{ Name: string }} */ secret) => secret.Name,
+    );
+    expect(secretNames).not.toContain('MODEL_API_KEY');
+    expect(secretNames.every((/** @type {string} */ name) => name.startsWith('DATABASE_'))).toBe(
+      true,
+    );
   });
 
   it('uses one NAT gateway and no Container Insights in dev', () => {

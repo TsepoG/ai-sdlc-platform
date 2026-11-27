@@ -2,7 +2,9 @@
 import { AppError } from './app-error.js';
 
 const HTTP_BAD_REQUEST = 400;
+const HTTP_UNAUTHORIZED = 401;
 const HTTP_FORBIDDEN = 403;
+const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409;
 const HTTP_SERVER_ERROR = 500;
 
@@ -17,6 +19,27 @@ const HTTP_SERVER_ERROR = 500;
  * @property {string} path Dotted path inside that source, or `(root)`.
  * @property {string} message What is wrong.
  */
+
+/**
+ * An AppError whose status and code are fixed per subclass, declared as static fields, so each
+ * error type is a two-line declaration rather than a repeated constructor.
+ */
+export class FixedAppError extends AppError {
+  /** HTTP status this error maps to. */
+  static statusCode = HTTP_SERVER_ERROR;
+  /** Stable machine-readable code. */
+  static code = 'INTERNAL_ERROR';
+
+  /**
+   * Create the error with its subclass's status and code.
+   * @param {string} message Human-readable message; safe to show to API clients when status < 500.
+   * @param {CauseOptions} [options] Underlying error being wrapped.
+   */
+  constructor(message, { cause } = {}) {
+    const type = /** @type {typeof FixedAppError} */ (new.target);
+    super(message, { statusCode: type.statusCode, code: type.code, cause });
+  }
+}
 
 /** Stage configuration is invalid; the service must not start with it. */
 export class StageConfigError extends AppError {
@@ -38,73 +61,105 @@ export class StageConfigError extends AppError {
 }
 
 /** AI routing configuration is invalid or no provider can serve a route. */
-export class RoutingError extends AppError {
-  /**
-   * Create a routing error.
-   * @param {string} message What is wrong with the routing.
-   * @param {CauseOptions} [options] Underlying error being wrapped.
-   */
-  constructor(message, { cause } = {}) {
-    super(message, { statusCode: HTTP_SERVER_ERROR, code: 'ROUTING_INVALID', cause });
-  }
+export class RoutingError extends FixedAppError {
+  /** @override */
+  static statusCode = HTTP_SERVER_ERROR;
+  /** @override */
+  static code = 'ROUTING_INVALID';
 }
 
 /** A step outcome does not lead anywhere under the stage's rules. */
-export class InvalidTransitionError extends AppError {
-  /**
-   * Create an invalid-transition error.
-   * @param {string} message Which transition was refused and why.
-   * @param {CauseOptions} [options] Underlying error being wrapped.
-   */
-  constructor(message, { cause } = {}) {
-    super(message, { statusCode: HTTP_CONFLICT, code: 'INVALID_TRANSITION', cause });
-  }
+export class InvalidTransitionError extends FixedAppError {
+  /** @override */
+  static statusCode = HTTP_CONFLICT;
+  /** @override */
+  static code = 'INVALID_TRANSITION';
 }
 
 /** A decision was made against a package hash that is no longer current. */
-export class StalePackageError extends AppError {
-  /**
-   * Create a stale-package error.
-   * @param {string} message Explanation for the reviewer.
-   * @param {CauseOptions} [options] Underlying error being wrapped.
-   */
-  constructor(message, { cause } = {}) {
-    super(message, { statusCode: HTTP_CONFLICT, code: 'STALE_PACKAGE', cause });
-  }
+export class StalePackageError extends FixedAppError {
+  /** @override */
+  static statusCode = HTTP_CONFLICT;
+  /** @override */
+  static code = 'STALE_PACKAGE';
 }
 
 /** The reviewer does not hold the role a gate requires. */
-export class NotAuthorisedError extends AppError {
-  /**
-   * Create a not-authorised error.
-   * @param {string} message Explanation for the reviewer.
-   * @param {CauseOptions} [options] Underlying error being wrapped.
-   */
-  constructor(message, { cause } = {}) {
-    super(message, { statusCode: HTTP_FORBIDDEN, code: 'NOT_AUTHORISED', cause });
-  }
+export class NotAuthorisedError extends FixedAppError {
+  /** @override */
+  static statusCode = HTTP_FORBIDDEN;
+  /** @override */
+  static code = 'NOT_AUTHORISED';
 }
 
 /** The reviewer authored or edited a version in the package they are deciding. */
-export class SeparationOfDutiesError extends AppError {
-  /**
-   * Create a separation-of-duties error.
-   * @param {string} message Explanation for the reviewer.
-   * @param {CauseOptions} [options] Underlying error being wrapped.
-   */
-  constructor(message, { cause } = {}) {
-    super(message, { statusCode: HTTP_FORBIDDEN, code: 'SEPARATION_OF_DUTIES', cause });
-  }
+export class SeparationOfDutiesError extends FixedAppError {
+  /** @override */
+  static statusCode = HTTP_FORBIDDEN;
+  /** @override */
+  static code = 'SEPARATION_OF_DUTIES';
 }
 
-/** A review package cannot be hashed: it is empty or holds a malformed content hash. */
-export class InvalidPackageError extends AppError {
-  /**
-   * Create an invalid-package error.
-   * @param {string} message What is wrong with the package.
-   * @param {CauseOptions} [options] Underlying error being wrapped.
-   */
-  constructor(message, { cause } = {}) {
-    super(message, { statusCode: HTTP_BAD_REQUEST, code: 'PACKAGE_INVALID', cause });
-  }
+/** A review package cannot be built: it is empty, or holds a malformed hash or a foreign version. */
+export class InvalidPackageError extends FixedAppError {
+  /** @override */
+  static statusCode = HTTP_BAD_REQUEST;
+  /** @override */
+  static code = 'PACKAGE_INVALID';
+}
+
+/** The requested record or content does not exist. */
+export class NotFoundError extends FixedAppError {
+  /** @override */
+  static statusCode = HTTP_NOT_FOUND;
+  /** @override */
+  static code = 'NOT_FOUND';
+}
+
+/** Stored content no longer matches the hash it was stored under. */
+export class ContentIntegrityError extends FixedAppError {
+  /** @override */
+  static statusCode = HTTP_SERVER_ERROR;
+  /** @override */
+  static code = 'CONTENT_CORRUPT';
+}
+
+/** A gate was decided concurrently, or is otherwise no longer open for a decision. */
+export class GateNotOpenError extends FixedAppError {
+  /** @override */
+  static statusCode = HTTP_CONFLICT;
+  /** @override */
+  static code = 'GATE_NOT_OPEN';
+}
+
+/** A package cannot be submitted while blocking open questions are unanswered. */
+export class BlockingQuestionsError extends FixedAppError {
+  /** @override */
+  static statusCode = HTTP_CONFLICT;
+  /** @override */
+  static code = 'BLOCKING_QUESTIONS_OPEN';
+}
+
+/** A request body or parameter failed validation. */
+export class ValidationError extends FixedAppError {
+  /** @override */
+  static statusCode = HTTP_BAD_REQUEST;
+  /** @override */
+  static code = 'VALIDATION_FAILED';
+}
+
+/** A database migration could not be applied, or an applied one was changed afterwards. */
+export class MigrationError extends FixedAppError {
+  /** @override */
+  static statusCode = HTTP_SERVER_ERROR;
+  /** @override */
+  static code = 'MIGRATION_FAILED';
+}
+
+/** The request carries no usable identity. */
+export class UnauthenticatedError extends FixedAppError {
+  /** @override */
+  static statusCode = HTTP_UNAUTHORIZED;
+  /** @override */
+  static code = 'UNAUTHENTICATED';
 }
